@@ -47,6 +47,6 @@ npm run lint
 - Feature behavior            -> docs/PRD.md
 - Schema, migrations, calcs   -> docs/ARCHITECTURE.md
 - Auth, RLS, MFA, secrets     -> docs/SECURITY.md
-- Any UI or styling           -> docs/DESIGN.md
+- Any UI or styling           -> DESIGN.md
 - What to build next          -> docs/ROADMAP.md
 - Tests and acceptance        -> docs/ACCEPTANCE.md
