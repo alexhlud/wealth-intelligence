@@ -5,7 +5,11 @@
 Prove the smallest secure production path across the React client, Supabase
 Auth/Postgres, Row Level Security, automated tests, and Cloudflare Pages:
 
-1. A permitted user signs up, verifies their email, signs in, and signs out.
+1. An invited user accepts an administrator-provisioned Supabase Auth invite,
+   sets a password, verifies their email if required by the invite flow, signs
+   in, and signs out. The existing sign-up UI remains available but, with
+   Supabase public sign-up disabled, gives a single non-enumerating access
+   message to uninvited visitors.
 2. The user's single primary portfolio is created automatically.
 3. The user adds one investment position containing a symbol, quantity, and
    average cost.
@@ -27,10 +31,11 @@ position-event history, snapshots, MFA, or dashboard breadth.
   small Supabase browser client using only the publishable key.
 - Supabase, React Router, TanStack Query, Zod, Tailwind, and Lucide are already
   installed. No production dependency is needed for the slice.
-- There are no Supabase migrations, test scripts/frameworks, RLS tests,
-  Cloudflare Pages configuration, or existing `docs/plans` directory.
-- The design guide is at the repository root as `DESIGN.md`, rather than the
-  `docs/DESIGN.md` path named in `AGENTS.md`.
+- Cloudflare Pages configuration and `public/_headers` and
+  `public/_redirects` already exist. This phase extends only the existing
+  headers file with a report-only CSP.
+- The design guide is at the repository root as `DESIGN.md`, as required by
+  the current `AGENTS.md`.
 
 ## Proposed implementation boundaries
 
@@ -99,9 +104,14 @@ the client.
 
 ## Authentication and lifecycle
 
-1. Sign-up validates email/password locally, then calls Supabase Auth email/
-   password sign-up with an email-confirmation redirect back to the deployed
-   callback route.
+1. The sign-up screen validates email/password locally and can attempt the
+   normal email/password sign-up flow, but the Supabase dashboard will have
+   public sign-ups disabled. Its rejected result is mapped to one generic,
+   non-enumerating message: "We couldn’t create an account with those details.
+   If you have an invitation, use the link in its email." The client never
+   decides who is eligible. Administrators provision allowed users through
+   Supabase Auth invites; the invite redirect returns to the deployed callback
+   route so the invited user can set a password and establish a session.
 2. Supabase Auth configuration, not frontend logic, will require confirmed
    email before the portfolio route can initialize data. The confirmation
    callback exchanges/reads the session and redirects only an eligible session
@@ -112,11 +122,13 @@ the client.
 4. Sign-out calls Supabase Auth sign-out, clears client query cache, and returns
    to sign-in.
 
-The Supabase dashboard will be configured before production testing to enable
-email confirmation, password requirements and leaked-password protection,
-short JWT expiry with refresh-token rotation, native rate limits, and
-Turnstile. Invite-only enforcement is a prerequisite decision listed below;
-it cannot be honestly provided by client-side controls.
+The Supabase dashboard will be configured by the project owner before
+production testing to disable public sign-ups, configure invite/callback URLs,
+enable email confirmation, password requirements and leaked-password
+protection, short JWT expiry with refresh-token rotation, native rate limits,
+and Turnstile. Invite-only enforcement is deliberately temporary for Phase
+0.5: it uses Supabase Auth admin invites. The `allowed_signups` table plus
+Auth hook approach is deferred to V1; it is not built in this phase.
 
 ## Tests and verification
 
@@ -144,31 +156,47 @@ Planned tests:
 
 ## Deployment
 
-Add the minimum Cloudflare Pages configuration needed to build the Vite client
-(`npm run build`, output `dist`) and SPA fallback behavior. Add `public/_headers`
-with the required security headers, beginning CSP in report-only mode with an
-explicit `connect-src` allowlist for the configured Supabase origin; move to
-enforcement only after the production smoke test confirms legitimate auth/API
-traffic is not blocked. Cloudflare environment variables will contain only the
-Supabase URL and publishable key, never privileged credentials.
+Use the existing Cloudflare Pages configuration, SPA fallback, and project
+connected to `main`; do not add replacement hosting configuration. Extend the
+existing `public/_headers` with a report-only CSP that includes the configured
+Supabase origin in `connect-src`; move to enforcement only after the production
+smoke test confirms legitimate auth/API traffic is not blocked. Cloudflare
+environment variables already contain only the Supabase URL and publishable
+key, never privileged credentials. Production is
+`https://wealth-intelligence.pages.dev`.
 
-## Required decisions before implementation
+## Owner-operated Supabase dashboard checklist
 
-1. **Invite-only versus open sign-up:** `SECURITY.md` requires invite-only
-   enforcement at the server, while Phase 0.5 explicitly includes self-service
-   sign-up. Please choose either (a) provision users through Supabase Auth
-   admin invites with public sign-up disabled, or (b) an `allowed_signups`
-   table plus Auth hook/trigger. The plan will implement the chosen server-side
-   mechanism; it will not assume open registration.
-2. **First sign-in semantics:** Supabase can reliably create the portfolio via
-   the above idempotent authenticated RPC after a verified session. A trigger
-   on `auth.users` would instead create it at sign-up, before first sign-in.
-   This plan uses the RPC to meet the roadmap's stated first-sign-in behavior.
-   Confirm that this is preferred.
-3. **Production access:** deployment and email verification require the target
-   Supabase project URL and a Cloudflare Pages project/account (or authority to
-   create them), plus the final production URL for Supabase redirect allowlists
-   and CSP. These values must be configured outside version control.
+Before deployment smoke testing, the project owner must make these Supabase
+Dashboard changes. This implementation stops before performing them.
+
+1. **Authentication → Configuration → General**: disable **Allow new users to
+   sign up**. Retain email/password sign-in; this is the server-side invite-only
+   enforcement for this temporary phase.
+2. **Authentication → URL Configuration**: set **Site URL** to
+   `https://wealth-intelligence.pages.dev`; add
+   `https://wealth-intelligence.pages.dev/auth/callback` to **Redirect URLs**.
+   Add the local callback URL used for development only if needed.
+3. **Authentication → Providers → Email**: enable **Confirm email**.
+4. **Authentication → Configuration → Password Security**: set the required
+   password-strength policy and enable **Leaked password protection** (this
+   control requires the appropriate Supabase plan).
+5. **Authentication → Configuration → Sessions**: retain refresh-token
+   rotation/reuse protection and set the JWT expiry (one hour is the current
+   Supabase recommendation for most applications).
+6. **Authentication → Rate Limits**: set the production email, sign-in, and
+   token-refresh rate limits appropriate for 1–10 trusted users.
+7. **Project Settings → Authentication → Bot and Abuse Protection**: configure and enable
+   Turnstile with its site key/secret held only in the dashboard and approved
+   server-side configuration.
+8. **Project Settings → Data API → Exposed Schemas**: add `app`, keep only
+   required API schemas exposed, and save. The browser client is configured to
+   use this dedicated application schema.
+9. **Authentication → Users → Add user → Send invitation**: use this control to provision
+   each permitted person. Never invite users through client code.
+
+No Supabase dashboard changes, role concepts, administration views, or user
+management UI are part of this phase.
 
 ## Completion criteria
 
@@ -176,3 +204,36 @@ After the above decisions are approved and implementation is complete, the
 slice is complete only when the production smoke test succeeds and
 `npm run build`, `npm run lint`, `npm run test`, and `npm run test:rls` all
 pass.
+
+## RLS test remediation
+
+### Objective
+
+Repair the Phase 0.5 database test file so all planned RLS assertions execute,
+and broaden its anonymous-role privilege coverage without changing the
+application schema or weakening any authorization check.
+
+### Targeted changes
+
+1. Update `supabase/tests/rls.sql` so the update and delete assertions perform
+   their data-modifying CTEs at the statement top level. Each assertion will
+   still count the `RETURNING` rows and prove that User B affected exactly zero
+   of User A's positions; neither assertion will be removed, skipped, or
+   converted into an error-only check.
+2. Replace the single combined `has_table_privilege` assertion with separate
+   assertions for `select`, `insert`, `update`, and `delete` on
+   `app.positions`, so no partial anonymous table grant can satisfy the test.
+3. Add separate anonymous-role assertions for every requested additional
+   surface: `app.portfolios` table privileges, `USAGE` on schema `app`, and
+   `EXECUTE` on `app.ensure_primary_portfolio()`. The function check will use
+   its exact zero-argument signature.
+4. Set `plan(n)` to the exact number of assertions after the expansion. Do not
+   restore an `ALTER DEFAULT PRIVILEGES ... ON VIEWS` statement: PostgreSQL
+   uses table default privileges for views, and the migration already covers
+   that object class.
+
+### Verification
+
+Run `npm run test:rls` against the local Supabase test database and inspect
+the TAP output. This remediation is complete only when the command exits zero
+and reports every planned test as passing.

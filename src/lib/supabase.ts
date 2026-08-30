@@ -10,6 +10,7 @@ if (!url || !key) {
 }
 
 export const supabase = createClient(url, key, {
+  db: { schema: 'app' },
   auth: {
     persistSession: true,
     autoRefreshToken: true,
