@@ -237,3 +237,75 @@ application schema or weakening any authorization check.
 Run `npm run test:rls` against the local Supabase test database and inspect
 the TAP output. This remediation is complete only when the command exits zero
 and reports every planned test as passing.
+
+## Portfolio numeric-boundary and render-containment remediation
+
+### Objective
+
+Repair the portfolio render crash caused by treating an unvalidated PostgREST
+response as the browser's canonical decimal-string position model. Add a
+React error boundary so an unexpected render failure is contained by a safe
+fallback rather than blanking the application or exposing raw error details.
+
+### Findings
+
+- `getPositions` currently receives untyped Supabase data and uses
+  `data as Position[]`. This is a TypeScript assertion only; it neither checks
+  nor converts the JSON payload at runtime.
+- `Position` consequently promises `quantity` and `average_cost` are strings,
+  while the crash proves that the actual `quantity` value crossing this
+  boundary is not a string. The unsafe assertion is therefore the fault line,
+  not `marketValue`.
+- The DOM/React boundary is not protected by an error boundary above
+  `PortfolioPage`.
+
+### Contract decision
+
+The browser's canonical decimal representation will remain a validated decimal
+string end-to-end after one explicitly named response-normalization boundary.
+This preserves the existing exact `BigInt` decimal calculations and ensures
+financial values are never converted to JavaScript floating-point numbers for
+calculation or persistence.
+
+`getPositions` will parse the untrusted PostgREST response with a dedicated
+Zod response schema. The schema will explicitly accept the observed PostgREST
+numeric JSON shape (JSON numbers for `quantity` and `average_cost`) as well as
+the string form where supplied, then normalize either shape to the same
+positive, precision-bounded decimal strings used by `positionInputSchema`.
+Invalid, non-finite, unsafe, negative, zero, or over-precision values will
+fail at this named boundary and will not reach `prices.ts` or rendering.
+
+### Targeted implementation changes after review
+
+1. Update `src/lib/validation.ts` with shared decimal normalization/validation
+   for both form input and the PostgREST position-row response. Export the
+   response parser/type so the data contract is visible and no `as Position[]`
+   assertion remains.
+2. Update `src/features/portfolio/PortfolioPage.tsx` to call that parser in
+   `getPositions`, use its canonical position type, and preserve decimal
+   strings in the insert payload. Query errors will continue to display only
+   generic UI copy.
+3. Update `src/features/portfolio/prices.ts` to declare its canonical decimal
+   string input contract clearly and retain exact integer-based arithmetic;
+   it will not perform implicit number coercion.
+4. Add a reusable class-based React error boundary around the routed app in
+   `src/App.tsx` (or a narrowly named shared component if the current files
+   require it). Its fallback will be generic, contain no error object,
+   financial values, database details, or stack trace, and offer only a safe
+   recovery action. A portfolio render failure will therefore leave the rest
+   of the shell/recovery UI available.
+5. Extend unit coverage for `20.5`, a whole-number quantity, and representative
+   PostgREST JSON rows whose numeric fields are JSON numbers. Include rejection
+   cases that prove malformed response values never reach calculation. Add an
+   error-boundary test that triggers a child render error and asserts generic
+   fallback copy without the thrown message.
+
+No dependencies, schema changes, RLS-policy changes, or migrations are
+required for this remediation.
+
+### Verification after implementation
+
+Run `npm run build`, `npm run test`, and `npm run test:rls`. All three must
+exit successfully. Inspect the changed tests to confirm the raw response shape
+and the generic error fallback are covered without asserting or rendering
+financial values in the fallback.

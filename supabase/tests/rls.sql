@@ -21,15 +21,24 @@ select throws_ok(
      values ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000', 'VOO', 1, 1) $$,
   '42501', null, 'User B cannot create a row for User A'
 );
+create temporary table rls_mutation_counts (
+  operation text primary key,
+  affected_rows bigint not null
+);
+
 with updated as (
   update app.positions set quantity = 21 returning id
 )
-select is((select count(*) from updated), 0::bigint, 'User B cannot update User A position');
+insert into rls_mutation_counts (operation, affected_rows)
+select 'update', count(*) from updated;
+select is((select affected_rows from rls_mutation_counts where operation = 'update'), 0::bigint, 'User B cannot update User A position');
 
 with deleted as (
   delete from app.positions returning id
 )
-select is((select count(*) from deleted), 0::bigint, 'User B cannot delete User A position');
+insert into rls_mutation_counts (operation, affected_rows)
+select 'delete', count(*) from deleted;
+select is((select affected_rows from rls_mutation_counts where operation = 'delete'), 0::bigint, 'User B cannot delete User A position');
 
 select ok(not has_table_privilege('anon', 'app.positions', 'select'), 'anon cannot select positions');
 select ok(not has_table_privilege('anon', 'app.positions', 'insert'), 'anon cannot insert positions');

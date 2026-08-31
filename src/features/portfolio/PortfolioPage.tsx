@@ -3,27 +3,26 @@ import type { FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CircleAlert, Plus, ShieldCheck } from 'lucide-react'
 import { SignOutButton } from '@/features/auth/AuthPages'
-import { positionInputSchema } from '@/lib/validation'
+import { parsePositionResponse, positionInputSchema } from '@/lib/validation'
+import type { PositionResponse } from '@/lib/validation'
 import { supabase } from '@/lib/supabase'
 import { formatUsd, HARDCODED_USD_PRICE_BY_SYMBOL, marketValue, sumDecimals } from './prices'
 
 type Portfolio = { id: string; name: string }
-type Position = { id: string; symbol: string; quantity: string; average_cost: string }
-
 async function initializePortfolio(): Promise<Portfolio> {
   const { data, error } = await supabase.rpc('ensure_primary_portfolio')
   if (error || !data) throw error ?? new Error('Could not prepare your portfolio.')
   return data as Portfolio
 }
 
-async function getPositions(portfolioId: string): Promise<Position[]> {
+async function getPositions(portfolioId: string): Promise<PositionResponse[]> {
   const { data, error } = await supabase
     .from('positions')
     .select('id, symbol, quantity, average_cost')
     .eq('portfolio_id', portfolioId)
     .order('created_at', { ascending: true })
   if (error) throw error
-  return data as Position[]
+  return parsePositionResponse(data)
 }
 
 export function PortfolioPage() {
