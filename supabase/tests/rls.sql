@@ -466,7 +466,7 @@ select ok(not exists (
 select is((select count(*) from pg_catalog.pg_proc p
            join pg_catalog.pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'app' and p.prosecdef),
-  2::bigint, 'Phase 2a has exactly two SECURITY DEFINER functions');
+  4::bigint, 'Only the two Phase 2a and two Phase 2b write RPCs are SECURITY DEFINER');
 select ok(not exists (
   select 1 from pg_catalog.pg_proc p
   join pg_catalog.pg_namespace n on n.oid = p.pronamespace
