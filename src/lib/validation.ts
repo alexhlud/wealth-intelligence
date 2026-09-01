@@ -21,7 +21,7 @@ export const positionInputSchema = z.object({
     .string()
     .trim()
     .toUpperCase()
-    .regex(/^[A-Z][A-Z0-9.\-]{0,9}$/, 'Use a valid ticker symbol.'),
+    .regex(/^[A-Z][A-Z0-9.-]{0,9}$/, 'Use a valid ticker symbol.'),
   quantity: positiveDecimal,
   averageCost: positiveDecimal,
 })
@@ -30,7 +30,7 @@ export type PositionInput = z.infer<typeof positionInputSchema>
 
 const positionResponseRowSchema = z.object({
   id: z.string().uuid(),
-  symbol: z.string().regex(/^[A-Z][A-Z0-9.\-]{0,9}$/),
+  symbol: z.string().regex(/^[A-Z][A-Z0-9.-]{0,9}$/),
   quantity: postgrestDecimal,
   average_cost: postgrestDecimal,
 })
