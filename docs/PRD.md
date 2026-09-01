@@ -1137,3 +1137,11 @@ The codebase must be clean enough to discuss in a software, cybersecurity, IT, c
 The Portfolio Time Machine should be treated as one of the flagship pieces of the product.
 
 The finished application should demonstrate that AI-assisted development can still result in deliberate architecture, strong security, high-quality code, meaningful testing, and thoughtful product design.
+## Account filtering on holdings
+
+Users can filter holdings by account. Not just one account or all
+accounts, but any combination: select two of three accounts and see
+the totals, allocation, and holdings for exactly that selection.
+
+All aggregate figures respect the current selection. Selection persists
+while navigating within the session. The default view is all accounts.
