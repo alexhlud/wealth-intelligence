@@ -1,532 +1,126 @@
-# DESIGN
-
-# DESIGN DIRECTION
-
-This application should look:
-
-- modern
-- premium
-- calm
-- simple
-- clean
-- sophisticated
-- trustworthy
-
-It should NOT look:
-
-- overly corporate
-- like a bank website from 2015
-- like a crypto casino
-- like Robinhood
-- like Bloomberg Terminal
-- overly futuristic
-- cluttered
-- AI-generated
-- full of gradients everywhere
-
-Think:
-
-high-end modern financial software with excellent spacing and restrained visual design.
-
----
-
-# COLOR SYSTEM
-
-Primary visual identity:
-
-# Lavender Purple + White
-
-Use a restrained palette.
-
-Suggested tokens:
-
-Background:
-
-`#FCFBFF`
-
-Primary surface:
-
-`#FFFFFF`
-
-Secondary lavender surface:
-
-`#F7F3FF`
-
-Soft lavender:
-
-`#EDE9FE`
-
-Primary purple:
-
-`#7C3AED`
-
-Primary hover:
-
-`#6D28D9`
-
-Medium lavender:
-
-`#A78BFA`
-
-Light accent:
-
-`#C4B5FD`
-
-Primary text:
-
-approximately `#211A2C`
-
-Secondary text:
-
-approximately `#6C6578`
-
-Border:
-
-approximately `#EAE4F2`
-
-Positive:
-
-restrained emerald/green
-
-Negative:
-
-restrained red
-
-Warning:
-
-restrained amber
-
-Maintain accessible contrast.
-
----
-
-# GRADIENTS
-
-Gradients are allowed but should be uncommon.
-
-Good places:
-
-- primary Net Worth card
-- landing-page hero detail
-- subtle chart fill
-- selected milestone
-
-Do NOT put gradients on every card/button.
-
-Potential primary gradient:
-
-deep lavender → medium lavender → very soft purple.
-
-Keep it tasteful.
-
----
-
-# CARDS
-
-Cards should have:
-
-- generous padding
-- subtle border
-- modest corner radius
-- extremely light shadow where useful
-- clear hierarchy
-
-Avoid extreme floating/glowing glass cards.
-
----
-
-# TYPOGRAPHY
-
-Use a clean modern sans-serif.
-
-Candidates:
-
-- Geist
-- Inter
-
-Prioritize legibility for financial numbers.
-
-Use tabular numerals where possible so changing financial values remain visually aligned.
-
-Large financial figures should feel confident but not oversized.
-
----
-
-# SPACING
-
-Use generous whitespace.
-
-Do not crowd charts against card edges.
-
-Use consistent spacing tokens.
-
-Financial dashboards become difficult to understand when everything is dense.
-
----
-
-# ANIMATION
-
-Use restrained micro-interactions.
-
-Examples:
-
-- smooth chart transitions
-- subtle card hover
-- number transition where appropriate
-- loading skeletons
-- drawer transitions
-- dropdown transitions
-
-Animations should generally be around 150–250ms.
-
-Do not use flashy bouncing effects.
-
-Respect `prefers-reduced-motion`.
-
----
-
-# CHART STYLE
-
-Charts should be visually clean.
-
-Use:
-
-- lavender/purple primary line
-- subtle gradient area fill
-- lightweight grid lines
-- high-quality tooltips
-- responsive sizing
-
-Avoid unnecessary chart borders.
-
-Tooltips should contain meaningful financial context.
-
----
-
-# DESKTOP NAVIGATION
-
-Use a clean left sidebar.
-
-Potential items:
-
-Home
-
-Portfolio
-
-History
-
-Goals
-
-Future
-
-Insights
-
-Activity
-
-Settings
-
-Do not add pages that have no useful content.
-
----
-
-# MOBILE NAVIGATION
-
-The application must work extremely well on a phone.
-
-Use a simplified bottom navigation or responsive compact navigation.
-
-Prioritize:
-
-Home
-
-Portfolio
-
-History
-
-Future
-
-More
-
-Tables should become mobile cards where appropriate.
-
-Do not simply shrink desktop tables until they become unreadable.
-
----
-
-# DASHBOARD DESIGN
-
-Potential desktop structure:
-
-TOP:
-
-Greeting / page title
-
-Date / refresh state
-
-Privacy toggle
-
-Profile menu
-
-ROW 1:
-
-Net Worth — primary card
-
-Investments
-
-Monthly Change
-
-Next Milestone
-
-ROW 2:
-
-Large Net-Worth History Chart
-
-ROW 3:
-
-Portfolio Allocation
-
-Goal Progress
-
-ROW 4:
-
-What Changed?
-
-Portfolio Summary
-
-ROW 5:
-
-Future Projection preview
-
-Recent Milestones
-
-Maintain hierarchy.
-
-The dashboard should not feel like 20 equally important boxes.
-
----
-
-# PORTFOLIO PAGE DESIGN
-
-Top section:
-
-Portfolio value
-
-Total return
-
-Daily change
-
-Refresh time
-
-Primary action:
-
-Add Investment
-
-Secondary:
-
-Refresh Prices
-
-Below:
-
-Holdings table/cards.
-
-Provide filtering by account.
-
-Clicking a holding opens a detailed drawer/page.
-
----
-
-# ADD INVESTMENT FLOW
-
-Make this extremely easy.
-
-User clicks:
-
-**Add Investment**
-
-Step 1:
-
-Search ticker.
-
-Step 2:
-
-Enter:
-
-Shares
-
-Average cost
-
-Account
-
-Optional acquisition date
-
-Step 3:
-
-Preview.
-
-Step 4:
-
-Save.
-
-Do not require unnecessary fields.
-
----
-
-# EDIT INVESTMENT FLOW
-
-Click holding → Edit.
-
-Shares should be editable immediately.
-
-Example:
-
-Current:
-
-38.71
-
-New:
-
-42.71
-
-Optional reason:
-
-Bought shares
-
-Sold shares
-
-Correction
-
-Transfer
-
-Other
-
----
-
-# HISTORY PAGE
-
-Make this a special page, not simply another line chart.
-
-Header:
-
-# Wealth History
-
-Subnavigation / modes:
-
-Net Worth
-
-Portfolio
-
-Time Machine
-
-Comparison
-
----
-
-# PORTFOLIO TIME MACHINE DESIGN
-
-Large timeline at top.
-
-Date control:
-
-`< February 26, 2026 >`
-
-Main historical total.
-
-Then:
-
-Historical Holdings
-
-Allocation
-
-Cash/assets
-
-Historical goals if available
-
-Provide:
-
-**Compare to Today**
-
-One click.
-
----
-
-# TIMELINE SCRUBBER
-
-Consider an interactive timeline scrubber.
-
-Dragging through time should update the summary at useful intervals.
-
----
-
-# ERROR STATES
-
-Every API-dependent component needs:
-
-Loading state.
-
-Empty state.
-
-Error state.
-
-Stale-data state.
-
-Example:
-
-“Latest market price unavailable. Showing last known value from Aug 25 at 3:58 PM.”
-
-Much better than:
-
-“Something went wrong.”
-
----
-
-# EMPTY STATES
-
-New accounts should look intentional.
-
-Example:
-
-“Your wealth timeline starts here.”
-
-CTA:
-
-Add your first investment.
-
-Another:
-
-Add historical snapshot.
-
-Do not show broken empty charts.
-
----
-
-# ACCESSIBILITY
-
-Use semantic HTML.
-
-Keyboard navigation.
-
-Visible focus states.
-
-ARIA labels where appropriate.
-
-Accessible chart alternatives where possible.
-
-Do not rely solely on color to convey gain/loss.
-
-Meet reasonable WCAG contrast.
-
----
-
-# DESIGN PRINCIPLE
-
-Use the lavender identity consistently, but allow financial information to remain readable.
-
-White should actually be the dominant visual surface.
-
-Lavender should provide personality.
-
-Purple should provide hierarchy.
-
-Green/red should communicate financial movement.
-
-Neutral colors should handle everything else.
+# Design — The Observatory
+
+## Direction
+
+The Observatory is a calm instrument panel for long-horizon investors. It
+turns personal wealth into something one can inspect: measured, legible, and
+honest about the limits of the data. It is not a trading terminal and never
+uses urgency, celebration, or market-theater as decoration.
+
+Public pages are nocturnal and expansive, like looking through a precisely
+made viewing instrument. Authenticated work is daylight-bright and quieter,
+like a well-kept field notebook. The same signal grammar connects both.
+
+## Instrument grammar
+
+- Purple is the active signal: the selected period, focused datum, primary
+  action, or one line a reader should follow. It is never decorative fill.
+- IBM Plex Mono is for measured facts: dates, values, percentages, tickers,
+  price freshness, axes, and comparison deltas. Financial figures use tabular
+  numerals.
+- Fine crosshairs mark inspection. They identify a selected chart point or
+  a focused comparison without relying on color alone.
+- Dashed strokes mean uncertainty, estimates, unavailable live data, or
+  projections. Supporting copy must name which of these applies.
+- Hairline rules establish scale and alignment. They should organize a
+  composition, not outline every container.
+- Empty space is hierarchy. A primary number, chart, or statement earns
+  substantial unoccupied room; secondary information compacts around it.
+
+Gain and loss always pair color with a signed value and directional mark:
+`+` / upward-right for gains, `−` / downward-right for losses. Selected data
+has a crosshair and explicit date/value label; projections have a dashed
+line and label. Freshness is never communicated by color alone.
+
+## Color systems
+
+### Public / dark observation
+
+- Canvas: `#09090D`
+- Raised field: `#111118`
+- Instrument panel: `#171720`
+- Rule / quiet grid: `#2A2935`
+- Primary ink: `#F4F2F8`
+- Secondary ink: `#B9B5C4`
+- Muted measurement: `#817D8D`
+- Active signal: `#A78BFA`
+- Active signal, strong: `#C4B5FD`
+- Gain: `#75D6A6`
+- Loss: `#F18B97`
+- Warning / stale: `#E5B76A`
+- Focus ring: `#D8CCFF`
+
+### Authenticated / light fieldbook
+
+- Canvas: `#F8F8F6`
+- Surface: `#FFFFFF`
+- Quiet surface: `#F1F0ED`
+- Selected field: `#EEEAFE`
+- Structural rule: `#D9D7D2`
+- Strong rule: `#BDBAB3`
+- Primary ink: `#17161B`
+- Secondary ink: `#625F68`
+- Muted measurement: `#817D85`
+- Active signal: `#6D4CCB`
+- Active signal, strong: `#5135AE`
+- Gain: `#177B54`
+- Loss: `#B54453`
+- Warning / stale: `#966313`
+- Focus ring: `#5B3CC4`
+
+Text and interactive states meet WCAG AA contrast. Warning surfaces retain
+their status label and time. Do not introduce gradients, glows, or glass as
+an identity substitute.
+
+## Typography
+
+- **Space Grotesk** carries display headings and large, human-facing wealth
+  statements. It is confident, compact, and used sparingly.
+- **Geist** carries navigation, labels, body copy, actions, and explanatory
+  language. It is the everyday reading voice.
+- **IBM Plex Mono** carries measurements and all numerical systems. Its
+  tabular numerals keep changing figures stable and visually comparable.
+
+Headings are direct and unprefixed by decorative eyebrows. Use clear scale
+steps, moderate negative tracking only on large Space Grotesk display text,
+and readable line lengths. Never use mono for prose decoration.
+
+## Composition and responsiveness
+
+Desktop work uses a broad field with one dominant observation and aligned
+secondary evidence. Avoid grids of equally weighted cards. On smaller
+screens, preserve the primary observation first, then stack related evidence
+in reading order. Tables become labelled records or horizontally scrollable
+measurements only when their columns are essential.
+
+Public compositions may use an almost-black field, wide margins, and a
+single vivid signal. Authenticated compositions use warm light surfaces,
+precise rules, and fewer containers. Mobile inspection makes the selected
+date and value persistent, then places the chart beneath it with a clear
+touch target for inspection.
+
+## Charts and tables
+
+Charts favor one active path, thin neutral reference lines, labelled axes,
+and a precise inspection state. Area fills are unnecessary by default.
+Live observations are solid; projections and unavailable regions are dashed.
+Tooltips or selected summaries include the full date, value, and relevant
+freshness or source context.
+
+Tables prioritize scanability over density: left-align names, right-align
+measures, reserve mono for numerical columns, and use rules to establish rows
+rather than boxed cells. Long security names may wrap to two lines without
+colliding with values. A stale quote displays its last successful timestamp;
+an empty table states what is absent and offers the next appropriate action.
+
+## Interaction, accessibility, and motion
+
+Every keyboard focus state uses the focus color with a visible outline.
+Controls name their action; icon-only controls have accessible names. Do not
+make color the sole indication of performance, selection, projection, or
+staleness. Charts provide an equivalent selected-data summary in text.
+
+Motion is restrained: one purposeful inspection transition (crosshair and
+selected data settling into place) may run around 180–240ms with an ease-out
+curve. All motion respects `prefers-reduced-motion`; no number should animate
+in a way that obscures its final value.
