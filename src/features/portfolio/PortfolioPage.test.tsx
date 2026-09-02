@@ -7,7 +7,10 @@ import { AccountsPage, HoldingsPage } from './PortfolioPage'
 const portfolioId = '11111111-1111-4111-8111-111111111111'
 const accountA = '22222222-2222-4222-8222-222222222222'
 const accountB = '33333333-3333-4333-8333-333333333333'
-const insertAccount = vi.fn(() => Promise.resolve({ error: null }))
+const { insertAccount, rpc } = vi.hoisted(() => ({
+  insertAccount: vi.fn(() => Promise.resolve({ error: null })),
+  rpc: vi.fn(() => Promise.resolve({ error: null })),
+}))
 
 const responses = {
   portfolios: [{ id: portfolioId, name: 'Primary portfolio' }],
@@ -23,6 +26,7 @@ const responses = {
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
+    rpc,
     from: (table: keyof typeof responses) => {
       const builder = {
         eq: () => builder,
@@ -45,7 +49,7 @@ function renderAccounts() {
 }
 
 describe('HoldingsPage account filters', () => {
-  afterEach(() => { cleanup(); insertAccount.mockClear(); sessionStorage.clear() })
+  afterEach(() => { cleanup(); insertAccount.mockClear(); rpc.mockClear(); sessionStorage.clear() })
 
   it('renders open positions, filters to one account, and preserves the zero-selection empty state', async () => {
     renderHoldings()
@@ -121,5 +125,20 @@ describe('HoldingsPage account filters', () => {
       portfolio_id: portfolioId,
     })))
     expect(screen.queryByText('Invalid input: expected string, received null')).toBeNull()
+  })
+
+  it('uses create_position rather than a direct positions write when the add form is submitted', async () => {
+    renderHoldings()
+    fireEvent.click(await screen.findByRole('button', { name: /Add position/ }))
+    fireEvent.change(screen.getByLabelText('Account'), { target: { value: accountA } })
+    fireEvent.change(screen.getByLabelText('Ticker'), { target: { value: ' qqq ' } })
+    fireEvent.change(screen.getByLabelText('Security name'), { target: { value: 'Invesco QQQ' } })
+    fireEvent.change(screen.getByLabelText('Shares'), { target: { value: '20.5' } })
+    fireEvent.change(screen.getByLabelText('Average cost'), { target: { value: '400' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save position' }))
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('create_position', expect.objectContaining({
+      p_account_id: accountA, p_symbol: 'QQQ', p_quantity: '20.5', p_average_cost: '400',
+    })))
   })
 })

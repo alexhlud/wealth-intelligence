@@ -6,6 +6,11 @@ const positiveDecimal = z
   .regex(/^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/, 'Enter a decimal number.')
   .refine((value) => value !== '0' && !/^0\.0+$/.test(value), 'Must be greater than zero.')
 
+const nonnegativeDecimal = z
+  .string()
+  .trim()
+  .regex(/^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/, 'Enter a decimal number.')
+
 const postgrestDecimal = z
   .union([
     positiveDecimal,
@@ -65,6 +70,40 @@ const openPositionResponseRowSchema = z.object({
 })
 export const openPositionResponseSchema = z.array(openPositionResponseRowSchema)
 export type OpenPositionResponse = z.infer<typeof openPositionResponseRowSchema>
+
+export const positionIntentSchema = z.object({
+  accountId: z.string().uuid('Choose an account.'),
+  symbol: z.string().trim().toUpperCase().regex(/^[A-Z][A-Z0-9.-]{0,9}$/, 'Use a valid ticker symbol.'),
+  securityName: z.string().trim().min(1, 'Enter a security name.').max(120),
+  assetType: z.enum(['stock', 'etf', 'mutual_fund', 'bond', 'crypto', 'cash_equivalent', 'other']),
+  quantity: positiveDecimal,
+  averageCost: nonnegativeDecimal,
+  occurredAt: z.string().datetime({ offset: true }),
+  notes: z.string().trim().max(500).nullable().transform((value) => value || null),
+})
+export type PositionIntent = z.infer<typeof positionIntentSchema>
+
+const itemBaseSchema = z.object({
+  accountId: z.string().uuid().nullable(),
+  name: z.string().trim().min(1, 'Enter a name.').max(120),
+  value: nonnegativeDecimal,
+  includeInNetWorth: z.boolean(),
+  notes: z.string().trim().max(500).nullable().transform((value) => value || null),
+  asOf: z.string().datetime({ offset: true }),
+})
+export const manualAssetInputSchema = itemBaseSchema.extend({ category: z.enum(['cash', 'savings', 'real_estate', 'vehicle', 'business_equity', 'collectible', 'other']) })
+export const liabilityInputSchema = itemBaseSchema.extend({ category: z.enum(['mortgage', 'vehicle_loan', 'student_loan', 'credit_balance', 'personal_loan', 'other']) })
+export type ManualAssetInput = z.infer<typeof manualAssetInputSchema>
+export type LiabilityInput = z.infer<typeof liabilityInputSchema>
+
+const itemResponseBaseSchema = z.object({
+  id: z.string().uuid(), portfolio_id: z.string().uuid(), account_id: z.string().uuid().nullable(), name: z.string().trim().min(1).max(120),
+  current_value: postgrestDecimal.optional(), outstanding_balance: postgrestDecimal.optional(), currency_code: z.literal('USD'), include_in_net_worth: z.boolean(), notes: nullableText(500), value_as_of: z.string().datetime({ offset: true }).optional(), balance_as_of: z.string().datetime({ offset: true }).optional(),
+})
+export const manualAssetResponseSchema = z.array(itemResponseBaseSchema.extend({ category: z.enum(['cash', 'savings', 'real_estate', 'vehicle', 'business_equity', 'collectible', 'other']), current_value: postgrestDecimal, value_as_of: z.string().datetime({ offset: true }) }))
+export const liabilityResponseSchema = z.array(itemResponseBaseSchema.extend({ category: z.enum(['mortgage', 'vehicle_loan', 'student_loan', 'credit_balance', 'personal_loan', 'other']), outstanding_balance: postgrestDecimal, balance_as_of: z.string().datetime({ offset: true }) }))
+export type ManualAssetResponse = z.infer<typeof manualAssetResponseSchema>[number]
+export type LiabilityResponse = z.infer<typeof liabilityResponseSchema>[number]
 
 export const accountInputSchema = z.object({
   name: z.string().trim().min(1, 'Enter an account name.').max(80),

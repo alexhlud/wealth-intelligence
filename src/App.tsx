@@ -4,6 +4,7 @@ import { AuthCallbackPage, AuthPage, ProtectedRoute } from '@/features/auth/Auth
 import { AccountsPage, HoldingsPage } from '@/features/portfolio/PortfolioPage'
 import { AppErrorBoundary } from '@/components/AppErrorBoundary'
 import { AppShell } from '@/components/AppShell'
+import { ValueItemsPage } from '@/features/assets/ValueItemsPage'
 
 export default function App() {
   return (
@@ -16,6 +17,8 @@ export default function App() {
             <Route element={<AppShell />}>
               <Route path="/holdings" element={<HoldingsPage />} />
               <Route path="/accounts" element={<AccountsPage />} />
+              <Route path="/assets" element={<ValueItemsPage kind="asset" />} />
+              <Route path="/liabilities" element={<ValueItemsPage kind="liability" />} />
               <Route path="/portfolio" element={<Navigate to="/holdings" replace />} />
             </Route>
           </Route>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { accountInputSchema, accountResponseSchema, openPositionResponseSchema, parsePositionResponse, positionInputSchema, validationErrorMessage } from './validation'
+import { accountInputSchema, accountResponseSchema, liabilityInputSchema, manualAssetInputSchema, openPositionResponseSchema, parsePositionResponse, positionInputSchema, positionIntentSchema, validationErrorMessage } from './validation'
 
 describe('positionInputSchema', () => {
   it('normalizes a valid fractional-share position without coercing money', () => {
@@ -54,5 +54,19 @@ describe('Phase 2a read validation', () => {
     const result = accountInputSchema.safeParse({ name: 'Taxable', institutionName: 42, accountType: 'brokerage', includeInNetWorth: true })
     expect(result.success).toBe(false)
     if (!result.success) expect(validationErrorMessage('account', result.error)).toBe('Enter an institution of 120 characters or fewer.')
+  })
+})
+
+describe('Phase 3b-2 mutation validation', () => {
+  it('requires a known-shaped, UTC position intent without coercing decimals', () => {
+    expect(positionIntentSchema.safeParse({ accountId: '11111111-1111-4111-8111-111111111111', symbol: ' qqq ', securityName: ' Invesco QQQ ', assetType: 'etf', quantity: '20.5', averageCost: '400', occurredAt: '2026-09-02T12:00:00.000Z', notes: '' }).data).toMatchObject({ symbol: 'QQQ', notes: null, quantity: '20.5' })
+    expect(positionIntentSchema.safeParse({ accountId: 'not-a-uuid', symbol: 'QQQ', securityName: 'QQQ', assetType: 'etf', quantity: '1.123456789', averageCost: '-1', occurredAt: 'not-a-date', notes: '' }).success).toBe(false)
+  })
+
+  it('accepts Phase 2a asset and liability categories and rejects malformed values', () => {
+    const common = { accountId: null, name: 'Home', value: '0', includeInNetWorth: true, notes: null, asOf: '2026-09-02T12:00:00.000Z' }
+    expect(manualAssetInputSchema.safeParse({ ...common, category: 'real_estate' }).success).toBe(true)
+    expect(liabilityInputSchema.safeParse({ ...common, category: 'mortgage' }).success).toBe(true)
+    expect(manualAssetInputSchema.safeParse({ ...common, category: 'crypto', value: '0.000000001' }).success).toBe(false)
   })
 })

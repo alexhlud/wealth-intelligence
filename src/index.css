@@ -12,3 +12,5 @@
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition-duration:.01ms!important; animation-duration:.01ms!important; } }
 .incomplete-total-notice { max-width:32ch; margin:8px 0 0!important; color:#f3d9a1!important; font:400 12px/1.45 "IBM Plex Mono",monospace!important; }
 .selector-trigger { width:100%; padding:9px 12px; color:#f3eee9; background:#292625; border:1px solid #6f665f; border-radius:6px; cursor:pointer; text-align:left; }
+textarea { width:100%; min-height:82px; padding:9px 11px; color:#f3eee9; background:#292625; border:1px solid #6f665f; border-radius:6px; font:inherit; resize:vertical; }
+textarea:hover { border-color:#baa5ff; } textarea:focus { outline:0; border-color:#baa5ff; } .confirmation-copy { color:#f3d9a1; line-height:1.5; }
