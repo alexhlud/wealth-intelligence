@@ -166,3 +166,87 @@ work is included.
 - Market prices, price refresh, stale price calculation, net worth dashboard,
   history, snapshots, charts, goals, projections, public/demo UI, MFA, and
   unrelated refactoring.
+
+---
+
+## Holdings regression follow-up
+
+### Evidence collected
+
+- The Holdings read query is scoped to the signed-in user's primary
+  portfolio, then filters `positions.status = 'open'`. The Phase 2a backfill
+  assigns legacy positions their existing `portfolio_id`, a matching
+  `account_id` for that portfolio's generated `Unassigned` account, and
+  `status = 'open'`. Therefore it does not introduce a value the query
+  excludes.
+- The empty-state branch itself already selects the "Select at least one"
+  message only when `selected.size === 0`. A report of that message while one
+  checkbox appears selected must be treated as a selection-state integrity
+  issue, not as copy branching for one selection.
+- Account selection is currently persisted as an unscoped array of IDs and is
+  never reconciled with the accounts returned for the active portfolio. Its
+  summary derives "All accounts" from matching counts rather than membership.
+  Stale IDs can therefore be described as all accounts while filtering out
+  every current account's position.
+
+### Planned targeted changes
+
+- In `src/features/portfolio/PortfolioPage.tsx`, scope persisted selection to
+  the active portfolio and reconcile it against returned account IDs. Derive
+  all/partial/none labels from current-account membership, so stale IDs cannot
+  produce a false "All accounts shown" state. Keep zero selection as the only
+  path to the select-an-account empty state.
+- Add a focused Holdings component test with mocked, schema-valid Supabase
+  responses. Cover an open position rendering under its account, selecting
+  one account rendering only that account's position, and zero selected
+  rendering the select-an-account state.
+- No migration, RLS policy, data repair, dependency, or price-calculation
+  change is required. The deployed row should be rechecked in the table editor
+  once the client change is available, because this environment has no
+  authenticated production session.
+
+### Verification
+
+- Run `npm run build`, `npm run lint`, `npm run test`, and `npm run test:rls`.
+
+---
+
+## Three-bug correction follow-up
+
+### Evidence collected
+
+- `sumDecimals()` accepts the row values correctly but fails when every value
+  has scale zero: JavaScript treats `-0` as `0`, so `digits.slice(0, -scale)`
+  becomes `digits.slice(0, 0)`. The computed whole amount is consequently
+  replaced by `"0"`. This is the direct cause of a displayed `$0.00` for
+  visible integer-valued holdings such as `$10,250.00`.
+- The account form converts an emptied Institution input to `null`, but its
+  Zod input schema requires a string before its transform runs. That mismatch
+  yields the raw Zod type error.
+- The account selector is a native `<details>` element without a close API,
+  outside-interaction listener, Escape handler, or focus-restoration ref.
+
+### Planned targeted changes
+
+- Correct the zero-scale branch in `src/features/portfolio/prices.ts` without
+  converting financial values to JavaScript numbers. Add unit coverage for a
+  single position, several positions, multiple selected accounts, and an
+  unavailable-price position omitted from the numeric total.
+- Update `accountInputSchema` to accept `null` as the form's empty optional
+  Institution value and normalize both empty-string and null input to null.
+  Add a small, explicit validation-error mapping for every Phase 3b-1 form
+  (sign-in, invitation password, and account) so UI copy is authored,
+  user-readable text rather than a Zod issue message. Preserve generic
+  Supabase failure messages.
+- Replace the native details-only selector behavior with controlled open
+  state. Close it on outside pointer interaction and Escape without changing
+  selection; on either close path restore focus to the trigger. Retain its
+  native checkbox semantics and live selection announcement.
+- Extend component tests to assert the selector's outside-click, Escape, and
+  focus-return behavior, in addition to the exact total cases above. No
+  migration, RLS policy, RPC, dependency, or market-data behavior changes are
+  required.
+
+### Verification
+
+- Run `npm run build`, `npm run lint`, `npm run test`, and `npm run test:rls`.

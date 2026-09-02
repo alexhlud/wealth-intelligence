@@ -14,7 +14,7 @@ export function marketValue(quantity: string, price: string): string {
   const product = quantityInteger * priceInteger
   const scale = quantityScale + priceScale
   const digits = product.toString().padStart(scale + 1, '0')
-  const whole = digits.slice(0, -scale) || '0'
+  const whole = scale === 0 ? digits : digits.slice(0, -scale) || '0'
   const fraction = scale === 0 ? '' : digits.slice(-scale).replace(/0+$/, '')
   return fraction ? `${whole}.${fraction}` : whole
 }
@@ -32,7 +32,7 @@ export function sumDecimals(values: readonly string[]): string {
     return sum + BigInt(`${whole}${fraction.padEnd(scale, '0')}`)
   }, 0n)
   const digits = total.toString().padStart(scale + 1, '0')
-  const whole = digits.slice(0, -scale) || '0'
+  const whole = scale === 0 ? digits : digits.slice(0, -scale) || '0'
   const fraction = scale === 0 ? '' : digits.slice(-scale).replace(/0+$/, '')
   return fraction ? `${whole}.${fraction}` : whole
 }

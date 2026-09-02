@@ -4,7 +4,7 @@ import { Navigate, Outlet, useNavigate } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { useQueryClient } from '@tanstack/react-query'
 import { KeyRound, LogIn, UserPlus } from 'lucide-react'
-import { signInInputSchema } from '@/lib/validation'
+import { invitationPasswordInputSchema, signInInputSchema, validationErrorMessage } from '@/lib/validation'
 import { supabase } from '@/lib/supabase'
 
 const invitationMessage = 'We couldn’t create an account with those details. If you have an invitation, use the link in its email.'
@@ -38,7 +38,7 @@ export function AuthPage() {
     setNotice(null)
     const parsed = signInInputSchema.safeParse({ email, password })
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? 'Check the details and try again.')
+      setError(validationErrorMessage('signIn', parsed.error))
       return
     }
 
@@ -105,12 +105,13 @@ export function AuthCallbackPage() {
   if (session) {
     async function savePassword(event: FormEvent<HTMLFormElement>) {
       event.preventDefault()
-      if (password.length < 8 || password.length > 128) {
-        setError('Use a password between 8 and 128 characters.')
+      const parsed = invitationPasswordInputSchema.safeParse({ password })
+      if (!parsed.success) {
+        setError(validationErrorMessage('invitationPassword', parsed.error))
         return
       }
       setIsSubmitting(true)
-      const { error: updateError } = await supabase.auth.updateUser({ password })
+      const { error: updateError } = await supabase.auth.updateUser(parsed.data)
       setIsSubmitting(false)
       if (updateError) { setError('We couldn’t set your password. Please try again.'); return }
       navigate('/holdings', { replace: true })

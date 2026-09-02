@@ -68,7 +68,7 @@ export type OpenPositionResponse = z.infer<typeof openPositionResponseRowSchema>
 
 export const accountInputSchema = z.object({
   name: z.string().trim().min(1, 'Enter an account name.').max(80),
-  institutionName: z.string().trim().max(120).transform((value) => value || null),
+  institutionName: z.string().trim().max(120).nullable().transform((value) => value || null),
   accountType: accountTypeSchema,
   includeInNetWorth: z.boolean(),
 })
@@ -78,3 +78,24 @@ export const signInInputSchema = z.object({
   email: z.string().trim().email('Enter a valid email address.'),
   password: z.string().min(8, 'Use at least 8 characters.').max(128),
 })
+
+export const invitationPasswordInputSchema = z.object({
+  password: z.string().min(8, 'Use at least 8 characters.').max(128),
+})
+
+type FormName = 'account' | 'invitationPassword' | 'signIn'
+
+/** Keeps client validation copy authored rather than exposing Zod implementation messages. */
+export function validationErrorMessage(form: FormName, error: z.ZodError): string {
+  const field = String(error.issues[0]?.path[0] ?? '')
+  if (form === 'account') {
+    if (field === 'name') return 'Enter an account name.'
+    if (field === 'institutionName') return 'Enter an institution of 120 characters or fewer.'
+    if (field === 'accountType') return 'Choose an account type.'
+    return 'Check the account details and try again.'
+  }
+  if (form === 'invitationPassword') return 'Use a password between 8 and 128 characters.'
+  if (field === 'email') return 'Enter a valid email address.'
+  if (field === 'password') return 'Use a password between 8 and 128 characters.'
+  return 'Check the details and try again.'
+}

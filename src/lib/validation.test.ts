@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { accountInputSchema, accountResponseSchema, openPositionResponseSchema, parsePositionResponse, positionInputSchema } from './validation'
+import { accountInputSchema, accountResponseSchema, openPositionResponseSchema, parsePositionResponse, positionInputSchema, validationErrorMessage } from './validation'
 
 describe('positionInputSchema', () => {
   it('normalizes a valid fractional-share position without coercing money', () => {
@@ -46,6 +46,13 @@ describe('Phase 2a read validation', () => {
 
   it('validates account form details before a write', () => {
     expect(accountInputSchema.safeParse({ name: ' Taxable ', institutionName: '', accountType: 'brokerage', includeInNetWorth: true }).data).toEqual({ name: 'Taxable', institutionName: null, accountType: 'brokerage', includeInNetWorth: true })
+    expect(accountInputSchema.safeParse({ name: ' Taxable ', institutionName: null, accountType: 'brokerage', includeInNetWorth: true }).data).toEqual({ name: 'Taxable', institutionName: null, accountType: 'brokerage', includeInNetWorth: true })
     expect(accountInputSchema.safeParse({ name: '', institutionName: '', accountType: 'not-a-type', includeInNetWorth: true }).success).toBe(false)
+  })
+
+  it('maps account validation errors to authored copy', () => {
+    const result = accountInputSchema.safeParse({ name: 'Taxable', institutionName: 42, accountType: 'brokerage', includeInNetWorth: true })
+    expect(result.success).toBe(false)
+    if (!result.success) expect(validationErrorMessage('account', result.error)).toBe('Enter an institution of 120 characters or fewer.')
   })
 })
