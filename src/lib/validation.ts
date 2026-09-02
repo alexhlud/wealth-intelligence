@@ -16,6 +16,8 @@ const postgrestDecimal = z
   ])
   .pipe(positiveDecimal)
 
+const nullableText = (max: number) => z.string().trim().min(1).max(max).nullable()
+
 export const positionInputSchema = z.object({
   symbol: z
     .string()
@@ -43,6 +45,34 @@ export type PositionResponse = z.infer<typeof positionResponseRowSchema>
 export function parsePositionResponse(value: unknown): PositionResponse[] {
   return positionResponseSchema.parse(value)
 }
+
+const portfolioResponseRowSchema = z.object({ id: z.string().uuid(), name: z.string().trim().min(1).max(80) })
+export const portfolioResponseSchema = z.array(portfolioResponseRowSchema)
+export type PortfolioResponse = z.infer<typeof portfolioResponseRowSchema>
+
+const accountTypeSchema = z.enum(['brokerage', 'retirement', 'savings', 'cash', 'crypto_wallet', 'other'])
+const accountResponseRowSchema = z.object({
+  id: z.string().uuid(), portfolio_id: z.string().uuid(), name: z.string().trim().min(1).max(80),
+  institution_name: nullableText(120), account_type: accountTypeSchema, include_in_net_worth: z.boolean(),
+})
+export const accountResponseSchema = z.array(accountResponseRowSchema)
+export type AccountResponse = z.infer<typeof accountResponseRowSchema>
+
+const openPositionResponseRowSchema = z.object({
+  id: z.string().uuid(), account_id: z.string().uuid(), symbol: z.string().regex(/^[A-Z][A-Z0-9.-]{0,9}$/),
+  security_name: z.string().trim().min(1).max(120), asset_type: z.enum(['stock', 'etf', 'mutual_fund', 'bond', 'crypto', 'cash_equivalent', 'other']),
+  status: z.literal('open'), quantity: postgrestDecimal, average_cost: postgrestDecimal,
+})
+export const openPositionResponseSchema = z.array(openPositionResponseRowSchema)
+export type OpenPositionResponse = z.infer<typeof openPositionResponseRowSchema>
+
+export const accountInputSchema = z.object({
+  name: z.string().trim().min(1, 'Enter an account name.').max(80),
+  institutionName: z.string().trim().max(120).transform((value) => value || null),
+  accountType: accountTypeSchema,
+  includeInNetWorth: z.boolean(),
+})
+export type AccountInput = z.infer<typeof accountInputSchema>
 
 export const signInInputSchema = z.object({
   email: z.string().trim().email('Enter a valid email address.'),

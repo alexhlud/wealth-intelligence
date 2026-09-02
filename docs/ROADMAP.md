@@ -25,7 +25,7 @@ proven. No UI reads it yet beyond the Phase 0.5 slice.
 ## Remaining
 
 ### Phase 3 — Application UI
-Design tokens and layout shell. Desktop sidebar and mobile navigation.
+Design tokens and layout shell. Centered top navigation and mobile navigation.
 Screens for what Phase 2a built: accounts, holdings table, add/edit
 position flows, manual assets, liabilities. Loading, empty, error, and
 stale states throughout. First phase where visual design matters.

@@ -30,7 +30,7 @@ export function AuthPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  if (session) return <Navigate to="/portfolio" replace />
+  if (session) return <Navigate to="/holdings" replace />
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -113,7 +113,7 @@ export function AuthCallbackPage() {
       const { error: updateError } = await supabase.auth.updateUser({ password })
       setIsSubmitting(false)
       if (updateError) { setError('We couldn’t set your password. Please try again.'); return }
-      navigate('/portfolio', { replace: true })
+      navigate('/holdings', { replace: true })
     }
     return <main className="auth-shell"><section className="auth-panel" aria-labelledby="set-password-title"><h1 id="set-password-title">Set your password</h1><p className="auth-intro">Your invitation is confirmed. Choose a password to finish setting up your private workspace.</p><form className="auth-form" onSubmit={savePassword} noValidate><label htmlFor="new-password">New password</label><input id="new-password" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />{error && <p className="form-message error" role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving…' : 'Continue to portfolio'}</button></form></section></main>
   }

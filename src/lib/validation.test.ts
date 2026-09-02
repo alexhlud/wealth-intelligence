@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parsePositionResponse, positionInputSchema } from './validation'
+import { accountInputSchema, accountResponseSchema, openPositionResponseSchema, parsePositionResponse, positionInputSchema } from './validation'
 
 describe('positionInputSchema', () => {
   it('normalizes a valid fractional-share position without coercing money', () => {
@@ -35,5 +35,17 @@ describe('positionInputSchema', () => {
     expect(() => parsePositionResponse([
       { id: '11111111-1111-4111-8111-111111111111', symbol: 'QQQ', quantity, average_cost },
     ])).toThrow()
+  })
+})
+
+describe('Phase 2a read validation', () => {
+  it('preserves account and position NUMERIC values as decimal strings', () => {
+    expect(accountResponseSchema.parse([{ id: '11111111-1111-4111-8111-111111111111', portfolio_id: '22222222-2222-4222-8222-222222222222', name: 'Taxable', institution_name: 'Northstar', account_type: 'brokerage', include_in_net_worth: true }])[0]?.name).toBe('Taxable')
+    expect(openPositionResponseSchema.parse([{ id: '33333333-3333-4333-8333-333333333333', account_id: '11111111-1111-4111-8111-111111111111', symbol: 'QQQ', security_name: 'Invesco QQQ', asset_type: 'etf', status: 'open', quantity: 20.5, average_cost: 400 }])[0]?.quantity).toBe('20.5')
+  })
+
+  it('validates account form details before a write', () => {
+    expect(accountInputSchema.safeParse({ name: ' Taxable ', institutionName: '', accountType: 'brokerage', includeInNetWorth: true }).data).toEqual({ name: 'Taxable', institutionName: null, accountType: 'brokerage', includeInNetWorth: true })
+    expect(accountInputSchema.safeParse({ name: '', institutionName: '', accountType: 'not-a-type', includeInNetWorth: true }).success).toBe(false)
   })
 })

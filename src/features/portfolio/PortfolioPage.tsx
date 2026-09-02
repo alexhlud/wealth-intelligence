@@ -1,114 +1,48 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CircleAlert, Plus, ShieldCheck } from 'lucide-react'
-import { SignOutButton } from '@/features/auth/AuthPages'
-import { parsePositionResponse, positionInputSchema } from '@/lib/validation'
-import type { PositionResponse } from '@/lib/validation'
+import { Plus, X } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States'
+import { accountInputSchema, accountResponseSchema, openPositionResponseSchema, portfolioResponseSchema } from '@/lib/validation'
+import type { AccountInput, AccountResponse, OpenPositionResponse, PortfolioResponse } from '@/lib/validation'
 import { supabase } from '@/lib/supabase'
-import { formatUsd, HARDCODED_USD_PRICE_BY_SYMBOL, marketValue, sumDecimals } from './prices'
+import { formatUsd, HARDCODED_USD_PRICE_BY_SYMBOL, marketValue, percentageOf, sumDecimals } from './prices'
 
-type Portfolio = { id: string; name: string }
-async function initializePortfolio(): Promise<Portfolio> {
-  const { data, error } = await supabase.rpc('ensure_primary_portfolio')
-  if (error || !data) throw error ?? new Error('Could not prepare your portfolio.')
-  return data as Portfolio
+async function getPortfolio(): Promise<PortfolioResponse> { const { data, error } = await supabase.from('portfolios').select('id, name').eq('is_primary', true).limit(1); if (error) throw error; const portfolio = portfolioResponseSchema.parse(data)[0]; if (!portfolio) throw new Error('Portfolio unavailable'); return portfolio }
+async function getAccounts(id: string): Promise<AccountResponse[]> { const { data, error } = await supabase.from('accounts').select('id, portfolio_id, name, institution_name, account_type, include_in_net_worth').eq('portfolio_id', id).order('created_at'); if (error) throw error; return accountResponseSchema.parse(data) }
+async function getPositions(id: string): Promise<OpenPositionResponse[]> { const { data, error } = await supabase.from('positions').select('id, account_id, symbol, security_name, asset_type, status, quantity, average_cost').eq('portfolio_id', id).eq('status', 'open').order('created_at'); if (error) throw error; return openPositionResponseSchema.parse(data) }
+function usePortfolioData() { const portfolio = useQuery({ queryKey: ['primary-portfolio'], queryFn: getPortfolio }); const accounts = useQuery({ queryKey: ['accounts', portfolio.data?.id], queryFn: () => getAccounts(portfolio.data!.id), enabled: Boolean(portfolio.data) }); const positions = useQuery({ queryKey: ['open-positions', portfolio.data?.id], queryFn: () => getPositions(portfolio.data!.id), enabled: Boolean(portfolio.data) }); return { portfolio, accounts, positions } }
+
+function AccountSelection({ accounts, selected, setSelected }: { accounts: AccountResponse[]; selected: Set<string>; setSelected: (value: Set<string>) => void }) {
+  const label = selected.size === accounts.length ? 'All accounts' : selected.size === 0 ? 'No accounts' : `${selected.size} accounts selected`
+  const toggle = (id: string) => { const next = new Set(selected); if (next.has(id)) next.delete(id); else next.add(id); setSelected(next) }
+  return <details className="account-selector"><summary aria-label={`Account selection: ${label}`}>{label}</summary><div className="selector-panel"><div className="selector-actions"><Button className="button-text" onClick={() => setSelected(new Set(accounts.map(({ id }) => id)))}>Select all</Button><Button className="button-text" onClick={() => setSelected(new Set())}>Clear all</Button></div>{accounts.map((account) => <label className="checkbox-row" key={account.id}><input type="checkbox" checked={selected.has(account.id)} onChange={() => toggle(account.id)} />{account.name}<span>{account.account_type.replace('_', ' ')}</span></label>)}<p className="selection-announcement" aria-live="polite">{label} shown.</p></div></details>
 }
 
-async function getPositions(portfolioId: string): Promise<PositionResponse[]> {
-  const { data, error } = await supabase
-    .from('positions')
-    .select('id, symbol, quantity, average_cost')
-    .eq('portfolio_id', portfolioId)
-    .order('created_at', { ascending: true })
-  if (error) throw error
-  return parsePositionResponse(data)
+export function HoldingsPage() {
+  const { portfolio, accounts, positions } = usePortfolioData(); const [selected, setSelected] = useState<Set<string> | null>(() => { const saved = sessionStorage.getItem('holding-account-selection'); return saved ? new Set(JSON.parse(saved) as string[]) : null })
+  const persistSelected = (next: Set<string>) => { sessionStorage.setItem('holding-account-selection', JSON.stringify([...next])); setSelected(next) }
+  useEffect(() => { if (selected === null && accounts.data) persistSelected(new Set(accounts.data.map(({ id }) => id))) }, [accounts.data, selected])
+  if (portfolio.isPending || accounts.isPending || positions.isPending || selected === null) return <LoadingState>Loading your holdings…</LoadingState>
+  if (portfolio.isError || accounts.isError || positions.isError) return <ErrorState onRetry={() => { void portfolio.refetch(); void accounts.refetch(); void positions.refetch() }} />
+  const accountList = accounts.data ?? []; if (!accountList.length) return <section className="page-header"><h1>Holdings, stated plainly.</h1><EmptyState>Add an account before you record its holdings.</EmptyState><a className="button button-primary" href="/accounts">Go to accounts</a></section>
+  const visible = (positions.data ?? []).filter((position) => selected.has(position.account_id)); const values = visible.flatMap((position) => { const price = HARDCODED_USD_PRICE_BY_SYMBOL[position.symbol]; return price ? [marketValue(position.quantity, price)] : [] }); const total = sumDecimals(values)
+  return <section><header className="page-header"><div><h1>Holdings, stated plainly.</h1><p>{portfolio.data?.name}</p></div><Button className="button-primary" disabled title="Position entry is available in Phase 3b-2"><Plus size={16} /> Add position</Button></header><div className="holdings-summary"><div><p>Selected holdings value</p><strong>{formatUsd(total)}</strong></div><AccountSelection accounts={accountList} selected={selected} setSelected={persistSelected} /></div>{positions.isFetching && <p className="refetch-copy" role="status">Refreshing holdings…</p>}<div className="table-wrap"><table className="data-table"><thead><tr><th>Security</th><th>Shares</th><th>Average cost</th><th>Price</th><th>Market value</th><th>Allocation</th></tr></thead><tbody>{visible.map((position) => { const price = HARDCODED_USD_PRICE_BY_SYMBOL[position.symbol]; const value = price ? marketValue(position.quantity, price) : null; const account = accountList.find(({ id }) => id === position.account_id); return <tr key={position.id}><td><strong>{position.security_name}</strong><small>{position.symbol} · {account?.name ?? 'Account unavailable'}</small></td><td>{position.quantity}</td><td>{formatUsd(position.average_cost)}</td><td>{price ? `${formatUsd(price)} fixed` : 'Unavailable'}</td><td>{value ? formatUsd(value) : 'Unavailable'}</td><td>{value ? percentageOf(value, total) ?? 'Unavailable' : 'Unavailable'}</td></tr>})}</tbody></table></div>{visible.length === 0 && <EmptyState>{selected.size ? 'No open positions belong to the selected accounts.' : 'Select at least one account to inspect its holdings.'}</EmptyState>}<p className="temporary-price">Temporary display source: QQQ $500.00 and VOO $600.00 fixed prices. Current quotes arrive in Phase 4.</p></section>
 }
 
-export function PortfolioPage() {
-  const queryClient = useQueryClient()
-  const [symbol, setSymbol] = useState('QQQ')
-  const [quantity, setQuantity] = useState('')
-  const [averageCost, setAverageCost] = useState('')
-  const [formError, setFormError] = useState<string | null>(null)
-  const portfolioQuery = useQuery({ queryKey: ['primary-portfolio'], queryFn: initializePortfolio })
-  const positionsQuery = useQuery({
-    queryKey: ['positions', portfolioQuery.data?.id],
-    queryFn: () => getPositions(portfolioQuery.data!.id),
-    enabled: Boolean(portfolioQuery.data?.id),
-  })
-  const addPosition = useMutation({
-    mutationFn: async () => {
-      const parsed = positionInputSchema.safeParse({ symbol, quantity, averageCost })
-      if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Check the position details.')
-      if (!HARDCODED_USD_PRICE_BY_SYMBOL[parsed.data.symbol]) throw new Error('This slice supports QQQ and VOO fixed prices only.')
-      const { error } = await supabase.from('positions').insert({
-        portfolio_id: portfolioQuery.data!.id,
-        symbol: parsed.data.symbol,
-        quantity: parsed.data.quantity,
-        average_cost: parsed.data.averageCost,
-      })
-      if (error) throw error
-    },
-    onSuccess: async () => {
-      setQuantity('')
-      setAverageCost('')
-      await queryClient.invalidateQueries({ queryKey: ['positions', portfolioQuery.data?.id] })
-    },
-    onError: (error) => setFormError(error instanceof Error ? error.message : 'Could not save the position.'),
-  })
+function AccountDialog({ account, portfolioId, onClose }: { account?: AccountResponse; portfolioId: string; onClose: () => void }) {
+  const client = useQueryClient(); const [form, setForm] = useState<AccountInput>({ name: account?.name ?? '', institutionName: account?.institution_name ?? null, accountType: account?.account_type ?? 'brokerage', includeInNetWorth: account?.include_in_net_worth ?? true }); const [error, setError] = useState<string | null>(null)
+  useEffect(() => { const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }; window.addEventListener('keydown', escape); return () => window.removeEventListener('keydown', escape) }, [onClose])
+  const save = useMutation({ mutationFn: async (input: AccountInput) => { const values = { name: input.name, institution_name: input.institutionName, account_type: input.accountType, include_in_net_worth: input.includeInNetWorth }; const result = account ? await supabase.from('accounts').update(values).eq('id', account.id) : await supabase.from('accounts').insert({ ...values, portfolio_id: portfolioId }); if (result.error) throw result.error }, onSuccess: async () => { await client.invalidateQueries({ queryKey: ['accounts', portfolioId] }); onClose() }, onError: () => setError('We couldn’t save this account. Please try again.') })
+  function submit(event: FormEvent) { event.preventDefault(); const parsed = accountInputSchema.safeParse(form); if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the account details.'); return } setError(null); save.mutate(parsed.data) }
+  return <div className="dialog-backdrop"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="account-dialog-title"><button className="dialog-close" onClick={onClose} aria-label="Close account form"><X size={18} /></button><h2 id="account-dialog-title">{account ? 'Edit account' : 'Add account'}</h2><form className="account-form" onSubmit={submit} noValidate><label>Account name<input autoFocus value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><label>Institution <span>(optional)</span><input value={form.institutionName ?? ''} onChange={(event) => setForm({ ...form, institutionName: event.target.value || null })} /></label><label>Account type<select value={form.accountType} onChange={(event) => setForm({ ...form, accountType: event.target.value as AccountInput['accountType'] })}><option value="brokerage">Brokerage</option><option value="retirement">Retirement</option><option value="savings">Savings</option><option value="cash">Cash</option><option value="crypto_wallet">Crypto wallet</option><option value="other">Other</option></select></label><label className="checkbox-row"><input type="checkbox" checked={form.includeInNetWorth} onChange={(event) => setForm({ ...form, includeInNetWorth: event.target.checked })} /> Include in net worth</label>{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><Button className="button-secondary" type="button" onClick={onClose}>Cancel</Button><Button className="button-primary" disabled={save.isPending}>{save.isPending ? 'Saving…' : 'Save account'}</Button></div></form></section></div>
+}
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setFormError(null)
-    addPosition.mutate()
-  }
-
-  if (portfolioQuery.isPending) return <main className="portfolio-shell"><p className="status-copy">Preparing your primary portfolio…</p></main>
-  if (portfolioQuery.isError) return <main className="portfolio-shell"><p className="error-state"><CircleAlert size={18} /> We couldn’t prepare your portfolio. Please sign out and try again.</p></main>
-
-  const positions = positionsQuery.data ?? []
-  const total = sumDecimals(positions.flatMap((position) => {
-    const price = HARDCODED_USD_PRICE_BY_SYMBOL[position.symbol]
-    return price ? [marketValue(position.quantity, price)] : []
-  }))
-
-  return (
-    <main className="portfolio-shell">
-      <header className="portfolio-header">
-        <div><p className="brand-name">Wealth Intelligence</p><h1>{portfolioQuery.data.name}</h1></div>
-        <SignOutButton />
-      </header>
-      <section className="portfolio-summary" aria-label="Portfolio summary">
-        <p>Portfolio value</p><strong>{formatUsd(total)}</strong>
-        <span><ShieldCheck size={15} /> Private and protected by row-level security</span>
-      </section>
-      <div className="portfolio-grid">
-        <section className="positions-section" aria-labelledby="positions-heading">
-          <div className="section-heading"><h2 id="positions-heading">Positions</h2><p>Fixed illustrative prices: QQQ $500.00 · VOO $600.00</p></div>
-          {positionsQuery.isPending && <p className="status-copy">Loading positions…</p>}
-          {positionsQuery.isError && <p className="error-state"><CircleAlert size={18} /> Your positions could not be loaded.</p>}
-          {!positionsQuery.isPending && !positionsQuery.isError && positions.length === 0 && <p className="empty-state">Your wealth timeline starts here. Add your first investment.</p>}
-          {positions.map((position) => {
-            const price = HARDCODED_USD_PRICE_BY_SYMBOL[position.symbol]
-            return <article className="position-row" key={position.id}>
-              <div><strong>{position.symbol}</strong><span>{position.quantity} shares · avg. cost {formatUsd(position.average_cost)}</span></div>
-              <strong>{price ? formatUsd(marketValue(position.quantity, price)) : 'Price unavailable'}</strong>
-            </article>
-          })}
-        </section>
-        <section className="add-position" aria-labelledby="add-heading">
-          <h2 id="add-heading">Add a position</h2>
-          <p>Use the fixed prices in this thin slice.</p>
-          <form onSubmit={submit} noValidate>
-            <label htmlFor="symbol">Ticker</label><input id="symbol" value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase())} maxLength={10} />
-            <label htmlFor="quantity">Shares</label><input id="quantity" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
-            <label htmlFor="average-cost">Average cost (USD)</label><input id="average-cost" inputMode="decimal" value={averageCost} onChange={(event) => setAverageCost(event.target.value)} />
-            {formError && <p className="form-message error" role="alert">{formError}</p>}
-            <button className="primary-button" type="submit" disabled={addPosition.isPending}><Plus size={18} />{addPosition.isPending ? 'Saving…' : 'Add position'}</button>
-          </form>
-        </section>
-      </div>
-    </main>
-  )
+export function AccountsPage() {
+  const { portfolio, accounts, positions } = usePortfolioData(); const [editing, setEditing] = useState<AccountResponse | null | undefined>(undefined)
+  if (portfolio.isPending || accounts.isPending || positions.isPending) return <LoadingState>Loading your accounts…</LoadingState>
+  if (portfolio.isError || accounts.isError || positions.isError) return <ErrorState onRetry={() => { void portfolio.refetch(); void accounts.refetch(); void positions.refetch() }} />
+  const accountList = accounts.data ?? []; const positionList = positions.data ?? []
+  return <section><header className="page-header"><div><h1>Accounts, clearly held.</h1><p>Containers for the positions you inspect.</p></div><Button className="button-primary" onClick={() => setEditing(null)}><Plus size={16} /> Add account</Button></header>{accountList.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Account</th><th>Institution</th><th>Type</th><th>Included</th><th>Positions</th><th><span className="sr-only">Action</span></th></tr></thead><tbody>{accountList.map((account) => <tr key={account.id}><td><strong>{account.name}</strong></td><td>{account.institution_name ?? '—'}</td><td>{account.account_type.replace('_', ' ')}</td><td>{account.include_in_net_worth ? 'Included' : 'Excluded'}</td><td>{positionList.filter(({ account_id }) => account_id === account.id).length}</td><td><Button className="button-text" onClick={() => setEditing(account)}>Edit</Button></td></tr>)}</tbody></table></div> : <EmptyState>Add the account that holds your first investment.</EmptyState>}{editing !== undefined && portfolio.data && <AccountDialog account={editing ?? undefined} portfolioId={portfolio.data.id} onClose={() => setEditing(undefined)} />}</section>
 }

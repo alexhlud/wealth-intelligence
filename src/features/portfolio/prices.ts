@@ -36,3 +36,17 @@ export function sumDecimals(values: readonly string[]): string {
   const fraction = scale === 0 ? '' : digits.slice(-scale).replace(/0+$/, '')
   return fraction ? `${whole}.${fraction}` : whole
 }
+
+/** Returns a fixed two-place percentage using integer arithmetic only. */
+export function percentageOf(value: string, total: string): string | null {
+  if (total === '0') return null
+  const scale = Math.max(value.split('.')[1]?.length ?? 0, total.split('.')[1]?.length ?? 0)
+  const asInteger = (input: string) => {
+    const [whole, fraction = ''] = input.split('.')
+    return BigInt(`${whole}${fraction.padEnd(scale, '0')}`)
+  }
+  const denominator = asInteger(total)
+  if (denominator === 0n) return null
+  const hundredths = (asInteger(value) * 10000n) / denominator
+  return `${hundredths / 100n}.${(hundredths % 100n).toString().padStart(2, '0')}%`
+}
