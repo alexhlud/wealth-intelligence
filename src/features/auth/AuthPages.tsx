@@ -1,28 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Navigate, Outlet, useNavigate } from 'react-router-dom'
-import type { Session } from '@supabase/supabase-js'
+import { Navigate, Outlet, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { KeyRound, LogIn, UserPlus } from 'lucide-react'
 import { invitationPasswordInputSchema, signInInputSchema, validationErrorMessage } from '@/lib/validation'
 import { supabase } from '@/lib/supabase'
+import { useSession } from './session'
 
 const invitationMessage = 'We couldn’t create an account with those details. If you have an invitation, use the link in its email.'
 
-function useSession() {
-  const [session, setSession] = useState<Session | null | undefined>(undefined)
-
-  useEffect(() => {
-    void supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession))
-    return () => data.subscription.unsubscribe()
-  }, [])
-
-  return session
-}
-
 export function AuthPage() {
   const session = useSession()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -30,7 +19,16 @@ export function AuthPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  if (session) return <Navigate to="/holdings" replace />
+  if (session && searchParams.get('signout') !== 'confirm') return <Navigate to="/holdings" replace />
+
+  async function signOutEverywhere() {
+    setIsSubmitting(true)
+    await supabase.auth.signOut({ scope: 'global' })
+    setIsSubmitting(false)
+    setSearchParams({}, { replace: true })
+  }
+
+  if (searchParams.get('signout') === 'confirm') return <main className="auth-shell"><section className="auth-panel" aria-labelledby="signout-title"><h1 id="signout-title">Sign out everywhere?</h1><p className="auth-intro">This will sign this account out on every device. You’ll need your password and, where configured, an authenticator code to return.</p><div className="dialog-actions"><button className="button button-secondary" type="button" onClick={() => setSearchParams({}, { replace: true })}>Cancel</button><button className="button button-primary" type="button" disabled={isSubmitting} onClick={() => void signOutEverywhere()}>{isSubmitting ? 'Signing out…' : 'Sign out everywhere'}</button></div></section></main>
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
