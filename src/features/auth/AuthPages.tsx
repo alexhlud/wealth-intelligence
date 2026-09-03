@@ -3,135 +3,40 @@ import type { FormEvent } from 'react'
 import { Navigate, Outlet, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { KeyRound, LogIn, UserPlus } from 'lucide-react'
-import { invitationPasswordInputSchema, signInInputSchema, validationErrorMessage } from '@/lib/validation'
+import { invitationPasswordInputSchema, passwordResetInputSchema, signInInputSchema, validationErrorMessage } from '@/lib/validation'
 import { supabase } from '@/lib/supabase'
 import { useSession } from './session'
+import { Turnstile } from './Turnstile'
 
-const invitationMessage = 'We couldn’t create an account with those details. If you have an invitation, use the link in its email.'
+const genericAuthError = 'We couldn’t complete that request. Please check your details and try again.'
+const resetNotice = 'If an account matches that email address, a recovery link is on its way.'
 
 export function AuthPage() {
-  const session = useSession()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-
+  const session = useSession(); const [searchParams, setSearchParams] = useSearchParams(); const [mode, setMode] = useState<'sign-in' | 'sign-up' | 'reset'>('sign-in'); const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null); const [isSubmitting, setIsSubmitting] = useState(false); const [captchaToken, setCaptchaToken] = useState<string | null>(null); const [captchaReset, setCaptchaReset] = useState(0)
   if (session && searchParams.get('signout') !== 'confirm') return <Navigate to="/holdings" replace />
-
-  async function signOutEverywhere() {
-    setIsSubmitting(true)
-    await supabase.auth.signOut({ scope: 'global' })
-    setIsSubmitting(false)
-    setSearchParams({}, { replace: true })
-  }
-
+  const resetCaptcha = () => { setCaptchaToken(null); setCaptchaReset((value) => value + 1) }
+  const changeMode = (next: 'sign-in' | 'sign-up' | 'reset') => { setMode(next); setError(null); setNotice(null); resetCaptcha() }
+  async function signOutEverywhere() { setIsSubmitting(true); await supabase.auth.signOut({ scope: 'global' }); setIsSubmitting(false); setSearchParams({}, { replace: true }) }
   if (searchParams.get('signout') === 'confirm') return <main className="auth-shell"><section className="auth-panel" aria-labelledby="signout-title"><h1 id="signout-title">Sign out everywhere?</h1><p className="auth-intro">This will sign this account out on every device. You’ll need your password and, where configured, an authenticator code to return.</p><div className="dialog-actions"><button className="button button-secondary" type="button" onClick={() => setSearchParams({}, { replace: true })}>Cancel</button><button className="button button-primary" type="button" disabled={isSubmitting} onClick={() => void signOutEverywhere()}>{isSubmitting ? 'Signing out…' : 'Sign out everywhere'}</button></div></section></main>
-
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setError(null)
-    setNotice(null)
-    const parsed = signInInputSchema.safeParse({ email, password })
-    if (!parsed.success) {
-      setError(validationErrorMessage('signIn', parsed.error))
-      return
-    }
-
+    event.preventDefault(); setError(null); setNotice(null)
+    const parsed = (mode === 'reset' ? passwordResetInputSchema : signInInputSchema).safeParse({ email, password })
+    if (!parsed.success) { setError(validationErrorMessage(mode === 'reset' ? 'passwordReset' : 'signIn', parsed.error)); return }
+    if (!captchaToken) { setError('Complete the security verification and try again.'); return }
     setIsSubmitting(true)
-    if (mode === 'sign-up') {
-      const { error: signUpError } = await supabase.auth.signUp({
-        email: parsed.data.email,
-        password: parsed.data.password,
-        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
-      })
-      setIsSubmitting(false)
-      if (signUpError) {
-        setError(invitationMessage)
-        return
-      }
-      setNotice(invitationMessage)
-      return
-    }
-
-    const { error: signInError } = await supabase.auth.signInWithPassword(parsed.data)
-    setIsSubmitting(false)
-    if (signInError) setError('We couldn’t sign you in with those details. Check your invitation and try again.')
+    if (mode === 'sign-up') { const { error: signUpError } = await supabase.auth.signUp({ email: parsed.data.email, password, options: { emailRedirectTo: `${window.location.origin}/auth/callback`, captchaToken } }); setIsSubmitting(false); resetCaptcha(); if (signUpError) { setError(genericAuthError); return }; setNotice('Check your email to verify your address and finish creating your account.'); return }
+    if (mode === 'reset') { await supabase.auth.resetPasswordForEmail(parsed.data.email, { redirectTo: `${window.location.origin}/auth/callback`, captchaToken }); setIsSubmitting(false); resetCaptcha(); setNotice(resetNotice); return }
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email: parsed.data.email, password, options: { captchaToken } }); setIsSubmitting(false); resetCaptcha(); if (signInError) setError(genericAuthError)
   }
-
-  const isSignUp = mode === 'sign-up'
-  return (
-    <main className="auth-shell">
-      <section className="auth-panel" aria-labelledby="auth-title">
-        <div className="brand-mark" aria-hidden="true"><KeyRound size={22} /></div>
-        <p className="brand-name">Wealth Intelligence</p>
-        <h1 id="auth-title">{isSignUp ? 'Request access' : 'Welcome back'}</h1>
-        <p className="auth-intro">
-          {isSignUp
-            ? 'Access is reserved for invited members. Use your invitation email to begin.'
-            : 'Sign in to see your private portfolio.'}
-        </p>
-        <form className="auth-form" onSubmit={submit} noValidate>
-          <label htmlFor="email">Email address</label>
-          <input id="email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} />
-          <label htmlFor="password">Password</label>
-          <input id="password" type="password" autoComplete={isSignUp ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} />
-          {error && <p className="form-message error" role="alert">{error}</p>}
-          {notice && <p className="form-message notice" role="status">{notice}</p>}
-          <button className="primary-button" type="submit" disabled={isSubmitting}>
-            {isSignUp ? <UserPlus size={18} /> : <LogIn size={18} />}
-            {isSubmitting ? 'Please wait…' : isSignUp ? 'Request access' : 'Sign in'}
-          </button>
-        </form>
-        <button className="text-button" type="button" onClick={() => { setMode(isSignUp ? 'sign-in' : 'sign-up'); setError(null); setNotice(null) }}>
-          {isSignUp ? 'Already invited? Sign in' : 'Need an invitation? Request access'}
-        </button>
-      </section>
-    </main>
-  )
+  const isSignUp = mode === 'sign-up'; const title = isSignUp ? 'Create your account' : mode === 'reset' ? 'Reset your password' : 'Welcome back'; const intro = isSignUp ? 'Create an account, then verify your email before accessing your private workspace.' : mode === 'reset' ? 'Enter your email address. We’ll send a recovery link if it matches an account.' : 'Sign in to see your private portfolio.'
+  return <main className="auth-shell"><section className="auth-panel" aria-labelledby="auth-title"><div className="brand-mark" aria-hidden="true"><KeyRound size={22} /></div><p className="brand-name">Wealth Intelligence</p><h1 id="auth-title">{title}</h1><p className="auth-intro">{intro}</p><form className="auth-form" onSubmit={submit} noValidate><label htmlFor="email">Email address</label><input id="email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} />{mode !== 'reset' && <><label htmlFor="password">Password</label><input id="password" type="password" autoComplete={isSignUp ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} /></>}<Turnstile onToken={setCaptchaToken} resetKey={captchaReset} />{error && <p className="form-message error" role="alert">{error}</p>}{notice && <p className="form-message notice" role="status">{notice}</p>}<button className="primary-button" type="submit" disabled={isSubmitting}>{isSignUp ? <UserPlus size={18} /> : <LogIn size={18} />}{isSubmitting ? 'Please wait…' : isSignUp ? 'Create account' : mode === 'reset' ? 'Send recovery link' : 'Sign in'}</button></form><div className="auth-links"><button className="text-button" type="button" onClick={() => changeMode(isSignUp ? 'sign-in' : 'sign-up')}>{isSignUp ? 'Already have an account? Sign in' : 'New here? Create an account'}</button>{mode !== 'reset' ? <button className="text-button" type="button" onClick={() => changeMode('reset')}>Forgot your password?</button> : <button className="text-button" type="button" onClick={() => changeMode('sign-in')}>Return to sign in</button>}</div></section></main>
 }
 
 export function AuthCallbackPage() {
-  const session = useSession()
-  const navigate = useNavigate()
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const session = useSession(); const navigate = useNavigate(); const [password, setPassword] = useState(''); const [error, setError] = useState<string | null>(null); const [isSubmitting, setIsSubmitting] = useState(false)
   if (session === undefined) return <main className="auth-shell"><p className="status-copy">Confirming your secure session…</p></main>
-  if (session) {
-    async function savePassword(event: FormEvent<HTMLFormElement>) {
-      event.preventDefault()
-      const parsed = invitationPasswordInputSchema.safeParse({ password })
-      if (!parsed.success) {
-        setError(validationErrorMessage('invitationPassword', parsed.error))
-        return
-      }
-      setIsSubmitting(true)
-      const { error: updateError } = await supabase.auth.updateUser(parsed.data)
-      setIsSubmitting(false)
-      if (updateError) { setError('We couldn’t set your password. Please try again.'); return }
-      navigate('/holdings', { replace: true })
-    }
-    return <main className="auth-shell"><section className="auth-panel" aria-labelledby="set-password-title"><h1 id="set-password-title">Set your password</h1><p className="auth-intro">Your invitation is confirmed. Choose a password to finish setting up your private workspace.</p><form className="auth-form" onSubmit={savePassword} noValidate><label htmlFor="new-password">New password</label><input id="new-password" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />{error && <p className="form-message error" role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving…' : 'Continue to portfolio'}</button></form></section></main>
-  }
-  return <main className="auth-shell"><section className="auth-panel"><h1>Check your email</h1><p className="auth-intro">Complete the link in your invitation, then return here to sign in.</p></section></main>
+  if (session) { async function savePassword(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const parsed = invitationPasswordInputSchema.safeParse({ password }); if (!parsed.success) { setError(validationErrorMessage('invitationPassword', parsed.error)); return }; setIsSubmitting(true); const { error: updateError } = await supabase.auth.updateUser(parsed.data); setIsSubmitting(false); if (updateError) { setError('We couldn’t set your password. Please try again.'); return }; navigate('/holdings', { replace: true }) }; return <main className="auth-shell"><section className="auth-panel" aria-labelledby="set-password-title"><h1 id="set-password-title">Set a new password</h1><p className="auth-intro">Choose a new password to finish recovering your private workspace.</p><form className="auth-form" onSubmit={savePassword} noValidate><label htmlFor="new-password">New password</label><input id="new-password" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />{error && <p className="form-message error" role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving…' : 'Continue to portfolio'}</button></form></section></main> }
+  return <main className="auth-shell"><section className="auth-panel"><h1>Check your email</h1><p className="auth-intro">Complete the link in your email, then return here to sign in.</p></section></main>
 }
-
-export function ProtectedRoute() {
-  const session = useSession()
-  if (session === undefined) return <main className="auth-shell"><p className="status-copy">Loading your secure workspace…</p></main>
-  return session ? <Outlet /> : <Navigate to="/auth" replace />
-}
-
-export function SignOutButton() {
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  async function signOut() {
-    await supabase.auth.signOut()
-    queryClient.clear()
-    navigate('/auth', { replace: true })
-  }
-  return <button className="text-button" type="button" onClick={() => void signOut()}>Sign out</button>
-}
+export function ProtectedRoute() { const session = useSession(); if (session === undefined) return <main className="auth-shell"><p className="status-copy">Loading your secure workspace…</p></main>; return session ? <Outlet /> : <Navigate to="/auth" replace /> }
+export function SignOutButton() { const navigate = useNavigate(); const queryClient = useQueryClient(); async function signOut() { await supabase.auth.signOut(); queryClient.clear(); navigate('/auth', { replace: true }) }; return <button className="text-button" type="button" onClick={() => void signOut()}>Sign out</button> }

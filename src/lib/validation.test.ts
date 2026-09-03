@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { accountInputSchema, accountResponseSchema, liabilityInputSchema, manualAssetInputSchema, openPositionResponseSchema, parsePositionResponse, positionInputSchema, positionIntentSchema, validationErrorMessage } from './validation'
+import { accountInputSchema, accountResponseSchema, liabilityInputSchema, manualAssetInputSchema, openPositionResponseSchema, parsePositionResponse, passwordResetInputSchema, positionInputSchema, positionIntentSchema, validationErrorMessage } from './validation'
 
 describe('positionInputSchema', () => {
   it('normalizes a valid fractional-share position without coercing money', () => {
@@ -68,5 +68,12 @@ describe('Phase 3b-2 mutation validation', () => {
     expect(manualAssetInputSchema.safeParse({ ...common, category: 'real_estate' }).success).toBe(true)
     expect(liabilityInputSchema.safeParse({ ...common, category: 'mortgage' }).success).toBe(true)
     expect(manualAssetInputSchema.safeParse({ ...common, category: 'crypto', value: '0.000000001' }).success).toBe(false)
+  })
+})
+
+describe('MFA-3 Auth validation', () => {
+  it('validates a password recovery email without requiring a password', () => {
+    expect(passwordResetInputSchema.safeParse({ email: ' user@example.com ' }).data).toEqual({ email: 'user@example.com' })
+    expect(passwordResetInputSchema.safeParse({ email: 'not-an-email' }).success).toBe(false)
   })
 })

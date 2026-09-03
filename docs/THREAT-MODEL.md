@@ -101,9 +101,10 @@ configuration drift or unknown implementation defects.
 - No Edge Functions, market-data provider, quote cache, provider credential, or
   server-side market-data security boundary exists yet. The holdings UI’s
   temporary fixed prices are not live market data.
-- No MFA, Turnstile, confirmed checked-in Auth rate-limit settings, password
-  policy verification, leaked-password protection verification, or sign-out
-  of all sessions is implemented in this repository.
+- MFA/AAL enforcement, Supabase-native Turnstile wiring, and global sign-out
+  are implemented. Supabase dashboard evidence for exact origins, CAPTCHA
+  secret, rate limits, password policy, leaked-password protection, and the
+  pre-release closed-registration gate remains an operational requirement.
 - Browser route protection is not an authorization control. Security depends
   on Supabase Auth/RLS/RPC behavior and correct production configuration.
 - CSP is report-only; there is no implemented security-header integration test
@@ -141,3 +142,22 @@ future work:
   and an open service has more ways to lose data.
 
 Until all three exist, registration stays closed.
+
+## MFA-3 update: registration and recovery export
+
+Supabase Auth verifies Cloudflare Turnstile responses for sign-up, password
+sign-in, and password reset. The page loads only the public site key; the
+matching secret remains dashboard-only. Auth responses are generic and the
+password-reset acknowledgement is intentionally identical for existing and
+non-existing accounts, limiting account enumeration. Exact widget origins,
+email/password policy, Auth rate limits, MFA API settings, and the decision to
+enable public registration are deployment controls recorded by the two-person
+checklist in `docs/SECURITY.md`; the repository does not enable public sign-up.
+
+The recovery-export path reads all current and immutable owned collections by
+RLS-protected pagination, validates responses, and aborts before download if a
+collection cannot be read. It holds the generated JSON only for the immediate
+browser download and revokes the object URL afterward. The remaining accepted
+availability risk is unchanged: there is no unattended backup, server-side
+copy, email delivery, or restore exercise. A user-operated monthly reminder
+does not make or retain a file.
