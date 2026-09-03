@@ -1145,3 +1145,11 @@ the totals, allocation, and holdings for exactly that selection.
 
 All aggregate figures respect the current selection. Selection persists
 while navigating within the session. The default view is all accounts.
+
+## History interaction
+
+Reading a historical value must not depend on holding a cursor in
+place. Selecting a date pins the reading until another is selected.
+Provide explicit month-level navigation, not only chart hover. The
+displayed value is the stored snapshot, labelled as recorded, not an
+interpolated point on a line.
