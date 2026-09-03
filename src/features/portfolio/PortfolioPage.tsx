@@ -11,7 +11,7 @@ import { formatUsd, HARDCODED_USD_PRICE_BY_SYMBOL, marketValue, percentageOf, su
 import { reconcileAccountSelection } from './accountSelection'
 import { PositionDialog } from './PositionDialog'
 
-async function getPortfolio(): Promise<PortfolioResponse> { const { data, error } = await supabase.from('portfolios').select('id, name').eq('is_primary', true).limit(1); if (error) throw error; const portfolio = portfolioResponseSchema.parse(data)[0]; if (!portfolio) throw new Error('Portfolio unavailable'); return portfolio }
+async function getPortfolio(): Promise<PortfolioResponse> { const { data, error } = await supabase.rpc('ensure_primary_portfolio'); if (error) throw error; const portfolio = portfolioResponseSchema.parse([data])[0]; if (!portfolio) throw new Error('Portfolio unavailable'); return portfolio }
 async function getAccounts(id: string): Promise<AccountResponse[]> { const { data, error } = await supabase.from('accounts').select('id, portfolio_id, name, institution_name, account_type, include_in_net_worth').eq('portfolio_id', id).order('created_at'); if (error) throw error; return accountResponseSchema.parse(data) }
 async function getPositions(id: string): Promise<OpenPositionResponse[]> { const { data, error } = await supabase.from('positions').select('id, account_id, symbol, security_name, asset_type, status, quantity, average_cost').eq('portfolio_id', id).eq('status', 'open').order('created_at'); if (error) throw error; return openPositionResponseSchema.parse(data) }
 function usePortfolioData() { const portfolio = useQuery({ queryKey: ['primary-portfolio'], queryFn: getPortfolio }); const accounts = useQuery({ queryKey: ['accounts', portfolio.data?.id], queryFn: () => getAccounts(portfolio.data!.id), enabled: Boolean(portfolio.data) }); const positions = useQuery({ queryKey: ['open-positions', portfolio.data?.id], queryFn: () => getPositions(portfolio.data!.id), enabled: Boolean(portfolio.data) }); return { portfolio, accounts, positions } }
@@ -69,6 +69,7 @@ function AccountDialog({ account, portfolioId, onClose }: { account?: AccountRes
 
 export function AccountsPage() {
   const { portfolio, accounts, positions } = usePortfolioData(); const [editing, setEditing] = useState<AccountResponse | null | undefined>(undefined)
+  if (portfolio.isError || accounts.isError || positions.isError) return <ErrorState onRetry={() => { void portfolio.refetch(); void accounts.refetch(); void positions.refetch() }} />
   if (portfolio.isPending || accounts.isPending || positions.isPending) return <LoadingState>Loading your accounts…</LoadingState>
   if (portfolio.isError || accounts.isError || positions.isError) return <ErrorState onRetry={() => { void portfolio.refetch(); void accounts.refetch(); void positions.refetch() }} />
   const accountList = accounts.data ?? []; const positionList = positions.data ?? []

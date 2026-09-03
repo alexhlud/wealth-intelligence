@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { accountInputSchema, accountResponseSchema, liabilityInputSchema, manualAssetInputSchema, openPositionResponseSchema, parsePositionResponse, passwordResetInputSchema, positionInputSchema, positionIntentSchema, validationErrorMessage } from './validation'
+import { accountInputSchema, accountResponseSchema, invitationPasswordInputSchema, liabilityInputSchema, manualAssetInputSchema, openPositionResponseSchema, parsePositionResponse, passwordResetInputSchema, positionInputSchema, positionIntentSchema, signInInputSchema, validationErrorMessage } from './validation'
 
 describe('positionInputSchema', () => {
   it('normalizes a valid fractional-share position without coercing money', () => {
@@ -75,5 +75,18 @@ describe('MFA-3 Auth validation', () => {
   it('validates a password recovery email without requiring a password', () => {
     expect(passwordResetInputSchema.safeParse({ email: ' user@example.com ' }).data).toEqual({ email: 'user@example.com' })
     expect(passwordResetInputSchema.safeParse({ email: 'not-an-email' }).success).toBe(false)
+  })
+
+  it('uses the same accurate 8-to-128-character password rule for sign-in and password updates', () => {
+    expect(signInInputSchema.safeParse({ email: 'user@example.com', password: 'timmy123' }).success).toBe(true)
+    expect(invitationPasswordInputSchema.safeParse({ password: 'timmy123' }).success).toBe(true)
+
+    const tooShort = invitationPasswordInputSchema.safeParse({ password: 'timmy12' })
+    expect(tooShort.success).toBe(false)
+    if (!tooShort.success) expect(validationErrorMessage('invitationPassword', tooShort.error)).toBe('Use at least 8 characters.')
+
+    const tooLong = signInInputSchema.safeParse({ email: 'user@example.com', password: 'a'.repeat(129) })
+    expect(tooLong.success).toBe(false)
+    if (!tooLong.success) expect(validationErrorMessage('signIn', tooLong.error)).toBe('Use 128 characters or fewer.')
   })
 })
