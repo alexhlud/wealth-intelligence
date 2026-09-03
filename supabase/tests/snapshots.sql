@@ -657,6 +657,49 @@ select is((select id
   (select id from snapshot_test_ids where name = 'second_correction'),
   'The selected leaf is the latest correction');
 
+-- A verified factor also gates immutable history and both elevated snapshot
+-- write RPCs; the table policy must not be bypassed through SECURITY DEFINER.
+reset role;
+insert into auth.mfa_factors (id, user_id, created_at, updated_at, factor_type, status, secret)
+values ('cccccccc-1111-1111-1111-111111111111',
+        '33333333-3333-3333-3333-333333333333', now(), now(), 'totp', 'verified', 'test-secret');
+select set_config('request.jwt.claim.sub', '33333333-3333-3333-3333-333333333333', true);
+select set_config('request.jwt.claim.aal', 'aal1', true);
+select set_config('request.jwt.claims', '{"sub":"33333333-3333-3333-3333-333333333333","role":"authenticated","aal":"aal1"}', true);
+set local role authenticated;
+select is((select count(*) from app.portfolio_snapshots), 0::bigint,
+  'Verified-factor owner at AAL1 reads no snapshot headers');
+select is((select count(*) from app.snapshot_positions), 0::bigint,
+  'Verified-factor owner at AAL1 reads no snapshot positions');
+select is((select count(*) from app.snapshot_manual_assets), 0::bigint,
+  'Verified-factor owner at AAL1 reads no snapshot assets');
+select is((select count(*) from app.snapshot_liabilities), 0::bigint,
+  'Verified-factor owner at AAL1 reads no snapshot liabilities');
+select throws_ok($$select app.create_portfolio_snapshot(
+  (select id from snapshot_test_ids where name = 'owner_portfolio'),
+  '2026-09-03', '2026-09-03 20:00+00', 'manual',
+  (select payload from snapshot_payloads where name = 'base_positions'),
+  (select payload from snapshot_payloads where name = 'base_assets'),
+  (select payload from snapshot_payloads where name = 'base_liabilities'),
+  'cccccccc-0000-0000-0000-000000000099')$$,
+  '42501', 'MFA verification required', 'AAL1 cannot invoke elevated create_portfolio_snapshot');
+select throws_ok($$select app.correct_portfolio_snapshot(
+  (select id from snapshot_test_ids where name = 'original_snapshot'), 'MFA blocked',
+  (select payload from snapshot_payloads where name = 'base_positions'),
+  (select payload from snapshot_payloads where name = 'base_assets'),
+  (select payload from snapshot_payloads where name = 'base_liabilities'),
+  'cccccccc-0000-0000-0000-000000000100')$$,
+  '42501', 'MFA verification required', 'AAL1 cannot invoke elevated correct_portfolio_snapshot');
+select set_config('request.jwt.claim.aal', 'aal2', true);
+select set_config('request.jwt.claims', '{"sub":"33333333-3333-3333-3333-333333333333","role":"authenticated","aal":"aal2"}', true);
+select ok((select count(*) > 0 from app.portfolio_snapshots),
+  'Verified-factor owner at AAL2 reads snapshot headers');
+select ok((select count(*) > 0 from app.snapshot_positions),
+  'Verified-factor owner at AAL2 reads snapshot positions');
+select ok((select count(*) > 0 from app.snapshot_manual_assets),
+  'Verified-factor owner at AAL2 reads snapshot assets');
+select ok((select count(*) > 0 from app.snapshot_liabilities),
+  'Verified-factor owner at AAL2 reads snapshot liabilities');
 reset role;
 
 select throws_ok($$
@@ -776,7 +819,7 @@ select ok(
 select is((select count(*) from pg_catalog.pg_proc as p
            join pg_catalog.pg_namespace as n on n.oid = p.pronamespace
            where n.nspname = 'app' and p.prosecdef),
-  4::bigint, 'Exactly the four approved atomic write RPCs are SECURITY DEFINER');
+  5::bigint, 'Exactly the four approved write RPCs and the MFA factor-state helper are SECURITY DEFINER');
 select ok(not exists (
   select 1 from pg_catalog.pg_proc as p
   join pg_catalog.pg_namespace as n on n.oid = p.pronamespace
