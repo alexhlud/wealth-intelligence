@@ -466,7 +466,7 @@ select ok(not exists (
 select is((select count(*) from pg_catalog.pg_proc p
            join pg_catalog.pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'app' and p.prosecdef),
-  4::bigint, 'Only the two Phase 2a and two Phase 2b write RPCs are SECURITY DEFINER');
+  5::bigint, 'Only the four public write RPCs and the MFA factor-state helper are SECURITY DEFINER');
 select ok(not exists (
   select 1 from pg_catalog.pg_proc p
   join pg_catalog.pg_namespace n on n.oid = p.pronamespace
@@ -479,6 +479,12 @@ select ok(not exists (
   where n.nspname = 'app' and p.prosecdef
     and obj_description(p.oid, 'pg_proc') is null),
   'Every SECURITY DEFINER documents its elevation');
+select is((select count(*) from pg_catalog.pg_policy as p
+           join pg_catalog.pg_class as c on c.oid = p.polrelid
+           join pg_catalog.pg_namespace as n on n.oid = c.relnamespace
+           where n.nspname = 'app' and p.polname like '%_mfa_assurance'
+             and not p.polpermissive),
+  11::bigint, 'Every user-owned app table has a restrictive MFA assurance policy');
 select ok(
   has_function_privilege('authenticated',
     'app.create_position(uuid,uuid,text,text,text,numeric,numeric,timestamptz,text,uuid)',
@@ -490,7 +496,11 @@ select ok(
 select ok(
   not has_function_privilege('authenticated', 'app.set_updated_at()', 'EXECUTE') and
   not has_function_privilege('authenticated', 'app.reject_history_mutation()', 'EXECUTE') and
-  not has_function_privilege('authenticated', 'app.validate_profile_timezone()', 'EXECUTE'),
+  not has_function_privilege('authenticated', 'app.validate_profile_timezone()', 'EXECUTE') and
+  not has_function_privilege('authenticated', 'app.require_mfa_assurance()', 'EXECUTE') and
+  not has_function_privilege('authenticated',
+    'app.create_position_mfa1_inner(uuid,uuid,text,text,text,numeric,numeric,timestamptz,text,uuid)',
+    'EXECUTE'),
   'authenticated cannot execute internal functions');
 select ok(
   has_table_privilege('authenticated', 'app.positions', 'SELECT') and
@@ -511,6 +521,67 @@ select is((select count(*) from pg_catalog.pg_class c
                'manual_assets','liabilities','position_events')
              and c.relrowsecurity and c.relforcerowsecurity),
   7::bigint, 'RLS is enabled and forced on every Phase 2a table');
+
+-- MFA AAL enforcement. A verified factor closes the AAL1 path for this owner;
+-- a user with no verified factor keeps the new-account/bootstrap path.
+insert into auth.mfa_factors (id, user_id, created_at, updated_at, factor_type, status, secret)
+values ('aaaaaaaa-1111-1111-1111-111111111111',
+        '11111111-1111-1111-1111-111111111111', now(), now(), 'totp', 'verified', 'test-secret');
+insert into auth.mfa_factors (id, user_id, created_at, updated_at, factor_type, status, secret)
+values ('bbbbbbbb-1111-1111-1111-111111111111',
+        '22222222-2222-2222-2222-222222222222', now(), now(), 'totp', 'unverified', 'test-secret');
+
+select set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+select set_config('request.jwt.claim.aal', 'aal1', true);
+set local role authenticated;
+select ok((select count(*) > 0 from app.portfolios),
+  'AAL1 retains bootstrap access when the user has only an unverified factor');
+reset role;
+
+select set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+select set_config('request.jwt.claim.aal', 'aal1', true);
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated","aal":"aal1"}', true);
+set local role authenticated;
+select is((select count(*) from app.profiles), 0::bigint, 'Verified-factor owner at AAL1 reads no profile rows');
+select is((select count(*) from app.portfolios), 0::bigint, 'Verified-factor owner at AAL1 reads no portfolio rows');
+select is((select count(*) from app.accounts), 0::bigint, 'Verified-factor owner at AAL1 reads no account rows');
+select is((select count(*) from app.positions), 0::bigint, 'Verified-factor owner at AAL1 reads no position rows');
+select is((select count(*) from app.manual_assets), 0::bigint, 'Verified-factor owner at AAL1 reads no manual asset rows');
+select is((select count(*) from app.liabilities), 0::bigint, 'Verified-factor owner at AAL1 reads no liability rows');
+select is((select count(*) from app.position_events), 0::bigint, 'Verified-factor owner at AAL1 reads no position-event rows');
+select throws_ok($$insert into app.manual_assets
+  (portfolio_id, name, category, current_value, value_as_of)
+  values ((select id from test_ids where name = 'user_a_portfolio'),
+          'Blocked AAL1 asset', 'cash', 1, '2026-09-03 00:00+00')$$,
+  '42501', null, 'Verified-factor owner at AAL1 cannot insert a financial row');
+select throws_ok($$select * from app.create_position(
+  (select id from test_ids where name = 'user_a_portfolio'),
+  (select id from test_ids where name = 'user_a_brokerage'),
+  'MFA', 'MFA blocked', 'etf', 1, 1, '2026-09-03 00:00+00', null,
+  'aaaaaaaa-0000-0000-0000-000000000099')$$,
+  '42501', 'MFA verification required', 'AAL1 cannot invoke elevated create_position');
+select throws_ok($$select * from app.edit_position(
+  (select id from test_ids where name = 'user_a_position'), 'manual_adjustment',
+  null, null, null, null, 2, 1, null, null, null,
+  '2026-09-03 00:00+00', null, 'aaaaaaaa-0000-0000-0000-000000000100')$$,
+  '42501', 'MFA verification required', 'AAL1 cannot invoke elevated edit_position');
+
+select set_config('request.jwt.claim.aal', 'aal2', true);
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated","aal":"aal2"}', true);
+select ok((select count(*) > 0 from app.profiles), 'Verified-factor owner at AAL2 reads profile rows');
+select ok((select count(*) > 0 from app.portfolios), 'Verified-factor owner at AAL2 reads portfolio rows');
+select ok((select count(*) > 0 from app.accounts), 'Verified-factor owner at AAL2 reads account rows');
+select ok((select count(*) > 0 from app.positions), 'Verified-factor owner at AAL2 reads position rows');
+select ok((select count(*) > 0 from app.manual_assets), 'Verified-factor owner at AAL2 reads manual asset rows');
+select ok((select count(*) > 0 from app.liabilities), 'Verified-factor owner at AAL2 reads liability rows');
+select ok((select count(*) > 0 from app.position_events), 'Verified-factor owner at AAL2 reads position-event rows');
+select lives_ok($$select * from app.create_position(
+  (select id from test_ids where name = 'user_a_portfolio'),
+  (select id from test_ids where name = 'user_a_brokerage'),
+  'MFA', 'MFA allowed', 'etf', 1, 1, '2026-09-03 00:00+00', null,
+  'aaaaaaaa-0000-0000-0000-000000000101')$$,
+  'AAL2 can invoke elevated create_position');
+reset role;
 
 select * from finish();
 rollback;
