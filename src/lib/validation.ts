@@ -113,15 +113,19 @@ export const accountInputSchema = z.object({
 })
 export type AccountInput = z.infer<typeof accountInputSchema>
 
+const passwordSchema = z.string()
+  .min(8, 'Use at least 8 characters.')
+  .max(128, 'Use 128 characters or fewer.')
+
 export const signInInputSchema = z.object({
   email: z.string().trim().email('Enter a valid email address.'),
-  password: z.string().min(8, 'Use at least 8 characters.').max(128),
+  password: passwordSchema,
 })
 
 export const passwordResetInputSchema = z.object({ email: z.string().trim().email('Enter a valid email address.') })
 
 export const invitationPasswordInputSchema = z.object({
-  password: z.string().min(8, 'Use at least 8 characters.').max(128),
+  password: passwordSchema,
 })
 
 /** TOTP codes are short-lived numeric values supplied by an authenticator. */
@@ -140,10 +144,10 @@ export function validationErrorMessage(form: FormName, error: z.ZodError): strin
     if (field === 'accountType') return 'Choose an account type.'
     return 'Check the account details and try again.'
   }
-  if (form === 'invitationPassword') return 'Use a password between 8 and 128 characters.'
+  if (form === 'invitationPassword' && field === 'password') return error.issues[0]?.message ?? 'Check the password and try again.'
   if (form === 'passwordReset') return 'Enter a valid email address.'
   if (form === 'totpCode') return 'Enter the code from your authenticator app.'
   if (field === 'email') return 'Enter a valid email address.'
-  if (field === 'password') return 'Use a password between 8 and 128 characters.'
+  if (field === 'password') return error.issues[0]?.message ?? 'Check the password and try again.'
   return 'Check the details and try again.'
 }

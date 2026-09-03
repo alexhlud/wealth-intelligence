@@ -9,7 +9,7 @@ const accountA = '22222222-2222-4222-8222-222222222222'
 const accountB = '33333333-3333-4333-8333-333333333333'
 const { insertAccount, rpc } = vi.hoisted(() => ({
   insertAccount: vi.fn(() => Promise.resolve({ error: null })),
-  rpc: vi.fn(() => Promise.resolve({ error: null })),
+  rpc: vi.fn((name: string) => Promise.resolve({ data: name === 'ensure_primary_portfolio' ? { id: portfolioId, name: 'Primary portfolio' } : null, error: null })),
 }))
 
 const responses = {
@@ -66,6 +66,24 @@ describe('HoldingsPage account filters', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear all' }))
     expect(screen.getByText('Select at least one account to inspect its holdings.')).toBeTruthy()
+  })
+
+  it('renders the first-run empty state after creating a portfolio with no accounts or positions', async () => {
+    const accounts = [...responses.accounts]
+    const positions = [...responses.positions]
+    responses.accounts.splice(0)
+    responses.positions.splice(0)
+
+    renderHoldings()
+
+    try {
+      expect(await screen.findByText('Add an account before you record its holdings.')).toBeTruthy()
+      expect(screen.queryByText(/Loading your holdings/)).toBeNull()
+      expect(rpc).toHaveBeenCalledWith('ensure_primary_portfolio')
+    } finally {
+      responses.accounts.splice(0, responses.accounts.length, ...accounts)
+      responses.positions.splice(0, responses.positions.length, ...positions)
+    }
   })
 
   it('discloses near the total when a selected holding has no available price', async () => {
