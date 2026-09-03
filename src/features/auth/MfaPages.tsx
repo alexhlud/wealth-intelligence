@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { KeyRound, Plus, Trash2 } from 'lucide-react'
 import { Navigate, Outlet, useNavigate } from 'react-router-dom'
@@ -84,8 +84,30 @@ function CodeForm({ factorId, submitLabel, onVerified }: { factorId: string; sub
 export function MfaChallengePage() {
   const session = useSession()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [factors, setFactors] = useState<Factor[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [isExiting, setIsExiting] = useState(false)
+  const exitInFlight = useRef(false)
+
+  const exitChallenge = useCallback(async () => {
+    if (exitInFlight.current) return
+    exitInFlight.current = true
+    setIsExiting(true)
+
+    const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' })
+    if (signOutError) {
+      exitInFlight.current = false
+      setIsExiting(false)
+      setError(genericError)
+      return
+    }
+
+    queryClient.clear()
+    setFactors(null)
+    setError(null)
+    navigate('/auth', { replace: true })
+  }, [navigate, queryClient])
 
   useEffect(() => {
     if (!session) return
@@ -94,6 +116,12 @@ export function MfaChallengePage() {
       else setFactors(verifiedFactors(data?.all ?? []))
     })
   }, [session])
+
+  useEffect(() => {
+    const handleBackNavigation = () => { void exitChallenge() }
+    window.addEventListener('popstate', handleBackNavigation)
+    return () => window.removeEventListener('popstate', handleBackNavigation)
+  }, [exitChallenge])
 
   if (session === undefined) return <main className="auth-shell"><p className="status-copy">Checking your security requirements…</p></main>
   if (!session) return <Navigate to="/auth" replace />
@@ -106,7 +134,7 @@ export function MfaChallengePage() {
     <h1 id="mfa-challenge-title">Confirm it’s you</h1>
     <p className="auth-intro">Enter a code from one of your authenticator apps to open your private workspace.</p>
     <CodeForm factorId={factors[0]!.id} submitLabel="Verify and continue" onVerified={async () => { navigate('/holdings', { replace: true }) }} />
-    <button className="button-text" type="button" onClick={() => navigate('/auth', { replace: true })}>Return to sign in</button>
+    <button className="button-text" type="button" onClick={() => void exitChallenge()} disabled={isExiting}>{isExiting ? 'Signing out…' : 'Return to sign in'}</button>
   </section></main>
 }
 
