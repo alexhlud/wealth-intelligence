@@ -122,7 +122,12 @@ export const invitationPasswordInputSchema = z.object({
   password: z.string().min(8, 'Use at least 8 characters.').max(128),
 })
 
-type FormName = 'account' | 'invitationPassword' | 'signIn'
+/** TOTP codes are short-lived numeric values supplied by an authenticator. */
+export const totpCodeInputSchema = z.object({
+  code: z.string().trim().regex(/^\d{6,8}$/, 'Enter the code from your authenticator app.'),
+})
+
+type FormName = 'account' | 'invitationPassword' | 'signIn' | 'totpCode'
 
 /** Keeps client validation copy authored rather than exposing Zod implementation messages. */
 export function validationErrorMessage(form: FormName, error: z.ZodError): string {
@@ -134,6 +139,7 @@ export function validationErrorMessage(form: FormName, error: z.ZodError): strin
     return 'Check the account details and try again.'
   }
   if (form === 'invitationPassword') return 'Use a password between 8 and 128 characters.'
+  if (form === 'totpCode') return 'Enter the code from your authenticator app.'
   if (field === 'email') return 'Enter a valid email address.'
   if (field === 'password') return 'Use a password between 8 and 128 characters.'
   return 'Check the details and try again.'
