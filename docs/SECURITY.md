@@ -61,6 +61,45 @@ No user enumeration.
 
 Rate limit auth endpoints.
 
+## MFA-3 operational configuration and release gate
+
+Cloudflare Turnstile is enabled in Supabase Auth for sign-up, password sign-in,
+and password reset. The browser receives only `VITE_TURNSTILE_SITE_KEY`; its
+matching secret is entered directly in the Supabase dashboard and is never a
+repository value or `VITE_*` secret. The application sends each short-lived
+Turnstile response only as Supabase Auth's `options.captchaToken`.
+
+Before enabling public registration, two reviewers must record the following
+dashboard evidence together: Turnstile enabled with its secret; exact local and
+production widget origins; Supabase Site URL and redirect URLs; email
+confirmation enabled; password length/complexity and leaked-password protection;
+auth rate limits; MFA/TOTP API availability; and public registration still
+disabled. Exercise sign-in, sign-up, reset, verified-email callback, MFA
+challenge, factor enrollment, factor removal, and recovery export against the
+production candidate. Only after both reviewers approve that evidence may the
+operator enable public sign-up in Supabase Auth. This code change does not and
+must not enable that dashboard setting.
+
+Password reset always confirms with the same text for existing and
+non-existing email addresses. Other Auth failures are generic. Verified-email
+registration and password recovery both return through `/auth/callback` to set
+a password. TOTP users should maintain a separately stored second factor; no
+recovery codes or support-mediated factor reset exist. Removing the final
+verified factor requires a fresh challenge and deliberately returns future
+password sessions to AAL1.
+
+## Recovery export
+
+The Data & recovery settings section creates an immediate versioned JSON
+**recovery export** through paginated RLS-protected reads. It includes every
+current and immutable owned collection, validates each response before use,
+renders numeric values as decimal strings, and aborts rather than producing a
+partial file. The export exists only in browser memory long enough to download;
+it is not cached, logged, uploaded, emailed, or retained, and its object URL is
+revoked after the download begins. Users should keep it encrypted in private
+local storage. The monthly setting is a user-operated reminder shown when the
+settings page is opened; it never creates an unattended export.
+
 Use Supabase's built-in limits and do not raise them.
 
 Provide a visible "sign out of all sessions" action.

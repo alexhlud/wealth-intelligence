@@ -15,3 +15,4 @@
 .selector-trigger { width:100%; padding:9px 12px; color:#f3eee9; background:#292625; border:1px solid #6f665f; border-radius:6px; cursor:pointer; text-align:left; }
 textarea { width:100%; min-height:82px; padding:9px 11px; color:#f3eee9; background:#292625; border:1px solid #6f665f; border-radius:6px; font:inherit; resize:vertical; }
 textarea:hover { border-color:#baa5ff; } textarea:focus { outline:0; border-color:#baa5ff; } .confirmation-copy { color:#f3d9a1; line-height:1.5; }
+.auth-links { display:grid; justify-items:start; gap:8px; margin-top:20px; } .turnstile-widget { min-height:65px; } .recovery-reminder { max-width:440px; margin-top:24px; } .recovery-reminder select { margin-top:2px; max-width:110px; } .recovery-reminder span { line-height:1.5; }

@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { totpCodeInputSchema, validationErrorMessage } from '@/lib/validation'
 import { supabase } from '@/lib/supabase'
 import { useSession } from './session'
+import { RecoveryExportSection } from '@/features/export/RecoveryExportSection'
 
 type Enrollment = { factorId: string; qrCode: string; secret: string }
 
@@ -190,6 +191,7 @@ export function SecurityPage() {
       {!removalVerified ? <CodeForm factorId={removalTarget.id} submitLabel="Verify removal" onVerified={async () => setRemovalVerified(true)} /> : <div className="dialog-actions"><button className="button button-secondary" type="button" onClick={() => { setRemovalTarget(null); setRemovalVerified(false) }}>Keep factor</button><button className="button button-primary" type="button" disabled={busy} onClick={() => void removeFactor()}>{busy ? 'Removing…' : 'Remove factor'}</button></div>}
       {!removalVerified && <button className="button-text" type="button" onClick={() => { setRemovalTarget(null); setRemovalVerified(false) }}>Cancel</button>}
     </section></div>}
+    <RecoveryExportSection />
     <section className="security-section security-signout"><h2>Sessions</h2><p>Signing out everywhere removes this account from all current devices.</p><button className="button button-secondary" type="button" onClick={() => navigate('/auth?signout=confirm')}>Sign out of all sessions</button></section>
   </section>
 }
