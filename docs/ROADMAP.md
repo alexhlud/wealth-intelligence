@@ -101,3 +101,13 @@ Activity timeline. Read-only sharing links.
 AI Wealth Review. Ask My Wealth. Monte Carlo simulation. Household
 accounts. Partner sharing. Brokerage integration. Real estate modeling.
 Income forecasting. Financial digital twin.
+
+## Resolved
+
+**Custom SMTP.** Resend connected via Supabase SMTP, sending from
+noreply@motionofwealth.com. Supabase's built-in development sender and
+its few-per-hour rate limit no longer apply. Registration is open.
+
+**Domain.** motionofwealth.com registered at Cloudflare. Not yet
+pointed at the app; the site still serves from the pages.dev
+subdomain.
