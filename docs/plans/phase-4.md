@@ -8,58 +8,58 @@ Function secrets; the browser receives only validated, normalized quotes or a
 clearly labelled last-known cached quote. A provider failure must leave the
 holdings table and its non-price data usable.
 
-This phase does not choose a market-data vendor, enable a live-data public
-demo, add historical backfill, create snapshots, or change the Phase 2a/2b
-financial records.
+This phase uses the decided and approved Finnhub path; it does not enable live
+data in the public demo, add historical backfill, create snapshots, or change
+the Phase 2a/2b financial records.
 
-## Provider research — decision required before implementation
+## Provider decision — Finnhub approved
 
-Research checked 2026-09-07. Prices, entitlements, exchange agreements, and
-terms can change; the chosen provider's current order form and add-ons must be
-reviewed before enabling live data in production.
+Finnhub is the V1 provider. It uses the free tier (60 calls per minute) and one
+shared server-side key. Finnhub granted written approval on 2026-10-14 for
+non-monetized use with friends and family; the approval and conditions are in
+[MARKET-DATA-LICENSE.md](../MARKET-DATA-LICENSE.md).
 
-The critical distinction is between an account holder privately viewing data
-and the application showing it to registered members. The latter is external
-display/redistribution even when the application is free and each member is
-authenticated. A server-side credential and a cache do not change that legal
-classification.
+The approval depends on server-enforced invite-only registration (public signup
+remains disabled), users personally known to the operator, and no monetization.
+Invite-only is therefore a live-data licensing dependency, not a UI preference.
+If any condition changes, disable live Finnhub access and obtain renewed written
+approval before re-enabling it. The anonymous public demo remains bundled
+fictional data and never requests Finnhub.
 
-| Provider | Free tier: limits, coverage, history | Display/redistribution terms | Freshness | What fails when it is outgrown |
-| --- | --- | --- | --- | --- |
-| [Twelve Data Basic](https://twelvedata.com/pricing) | Free; 8 API credits/minute and 800/day; 8 trial WebSocket credits; three markets. It lists real-time US equities/ETFs, forex, crypto, reference data, batch requests, and global *trial* symbols. The US-equities support article says EOD/historical data is available from Basic after midnight ET on the next trading day; confirm exact endpoint, symbols, and retention during a proof-of-concept because pricing labels Basic as “internal non-display.” | Basic permits **internal non-display** only. The terms say only some tiers/add-ons permit external display and redistribution, subject to extra terms, attribution, exchange rules, and separate agreements. The US-equities article says external distribution requires a Redistribution Rights Add-On and attribution normally applies. Therefore Basic cannot power registered users' holdings screens. | The Basic table labels US equities/ETFs, forex, and crypto real-time, but that right is for internal non-display use. Its US feed represents about 5% of trading volume; EOD history becomes available the next trading day. | It returns 429 once minute/day credits run out. Moving to the individual Grow tier adds internal **display** and removes the daily limit, but it still does not grant external redistribution. Public members require a business/display plan plus the correct redistribution/exchange add-ons; data coverage and attribution can also change. |
-| [Alpha Vantage](https://www.alphavantage.co/support/) | Free key: 25 requests/day for the majority of datasets; Alpha Vantage advertises unlimited requests only for a verified open-source or educational project. It documents a broad stock, ETF, FX, crypto, and indicator catalogue, but endpoints have their own entitlements. Historical series are available for supported free datasets; do not assume every symbol, interval, or adjusted series is free. | Its terms license personal, non-commercial use only. They define commercial use to include providing the information directly or indirectly to anyone other than the user, then direct commercial users to contact sales. Thus a public-registration application cannot use the free key for member-facing quotes. | Alpha Vantage says real-time and 15-minute-delayed US market data are premium-only and subject to entitlement. The free path must be treated as **not a licensed current-US-quote source**; the adapter must preserve any supplied timestamp/delay instead of calling it live. | The 26th request fails/throttles. Scaling requires a premium key and, for US real-time or 15-minute delayed data, separate data entitlement; commercial/display use requires written commercial terms. The unlimited educational exception is not a production license. |
-| [Polygon / Massive Stocks Basic](https://polygon.io/stocks) | Free; 5 API calls/minute; all US stock tickers; two years of historical data; end-of-day data, reference data, fundamentals, corporate actions, technical indicators, and minute aggregates. It is US-stocks-only for this product; no free live quote entitlement is advertised. | The published market-data terms permit personal, non-business, non-commercial use only and expressly prohibit building an application for end users other than the subscriber. They also prohibit public display/distribution without express prior permission. Basic is therefore unsuitable for public registered users. | End-of-day only on Basic. The published paid individual tiers list 15-minute delayed data at Starter/Developer and real-time at Advanced. | The sixth request in a minute is throttled. A paid **individual** tier still has individual-use terms; a public product needs a business plan and written display/redistribution approval. Paid data also changes retention, delay, and coverage commitments, so the cache's provider/source metadata cannot be discarded. |
-| [Finnhub](https://finnhub.io/terms-of-service) | Finnhub exposes global market-data endpoints and its docs show quote/candle-style history endpoints, but its current public pricing page does not state a reliable free-plan request quota, supported quote exchanges, or historical-retention entitlement in text that can be verified without an account. Its terms state a global ceiling of 30 API calls/second, which is **not** a free-plan allocation. Obtain a written free-tier entitlement before treating it as an option. | Every listed plan is personal unless explicitly stated otherwise, and the terms prohibit redistributing or sharing access to data **or derived results** with a third party without written approval. They additionally say a personal plan cannot be used by a business, even internally, without approval. It is not usable for member-facing prices on the default terms. | Do not infer real-time status from an endpoint name. It varies by exchange and entitlement; capture the source timestamp and explicit delay only after Finnhub confirms the chosen plan. | Unknown plan-level free limits make quota exhaustion and feature loss unpredictable. Upgrade/cancellation can require deleting data when the subscription ends; public display needs Finnhub's written approval and likely an appropriate licensed/commercial agreement. |
+This phase supports US equities only. A non-US-equity symbol, or a symbol
+Finnhub does not return, receives an explicit unavailable quote with a safe
+unsupported-symbol or not-found reason. The holding remains visible with its
+non-price facts; price-dependent value/allocation is excluded from totals, with
+the excluded-holding count stated. It is never silently dropped or fabricated.
 
-### Sources and implications
-
-- Twelve Data's [pricing](https://twelvedata.com/pricing),
-  [terms](https://twelvedata.com/terms), and [US-equities licensing
-  article](https://support.twelvedata.com/en/articles/9935903-us-equities-market-data)
-  distinguish Basic non-display use from external redistribution rights.
-- Alpha Vantage's [support/pricing](https://www.alphavantage.co/support/),
-  [premium page](https://www.alphavantage.co/premium/), and
-  [terms](https://www.alphavantage.co/terms_of_service/) distinguish the
-  25/day free key from exchange-entitled US real-time/delayed data and define
-  access by other users as commercial use.
-- Polygon's [Stocks pricing](https://polygon.io/stocks) and
-  [market-data terms](https://polygon.io/terms/market_data_terms.pdf) give the
-  free US/EOD limits and expressly bar an end-user application on the
-  individual license.
-- Finnhub's [terms](https://finnhub.io/terms-of-service) supply the decisive
-  personal-use and non-redistribution restriction. Its public price page is
-  not sufficiently specific to use as a free-tier capacity commitment.
-
-The Phase 4 provider-selection gate is therefore: obtain and record the
-selected provider's written authorization for the intended member-facing
-display, the instruments/exchanges and historical retention needed by V1,
-required attribution, delay status, allowed cache retention, and cost/quotas.
-Until that gate passes, live prices remain disabled in production. The
-private/educational mode may use only a credential and terms valid for its
-single account holder; the anonymous public demo continues to use bundled,
-deterministic fictional data and makes no provider request.
+This is a long-horizon tracker, not a trading app. Target one successful
+provider refresh per provider-symbol per XNYS trading day by default. Manual
+**Refresh Prices** uses the same quota-aware endpoint and cache policy; it does
+not create render-driven polling or bypass the daily target without a separately
+approved and documented exception. Failures always retain a valid cached quote.
 
 ## Architecture and implementation plan
+
+This work is split into two reviewable phases because the contract, cache,
+credential boundary, RLS/grants, and fallback behavior must be proved before
+the holdings UI consumes them:
+
+| Phase | Scope | Completion boundary |
+| --- | --- | --- |
+| 4a — Market-data foundation | Contracts, Finnhub adapter, quote cache, RLS/grants, authenticated Edge Function, rate controls, and server-side tests. | A protected endpoint returns normalized fresh, stale, delayed, or unavailable quotes; the holdings UI does not consume it yet. |
+| 4b — Holdings price integration | Quote query, manual Refresh Prices action, freshness/error display, totals handling, UI tests, and operational documentation. | Hard-coded holding prices are removed and the authenticated holdings UI uses the resilient quote path. |
+
+Do not begin 4b until 4a's migration, Edge Function, and RLS tests have passed
+review. Sections 1–3 below are Phase 4a; sections 4–5 are Phase 4b.
+
+### Phase 4a prerequisite — disable public signup before live data
+
+Before setting `FINNHUB_API_KEY`, deploying the function, or enabling live
+Finnhub access, open the Supabase Dashboard for the linked production project:
+**Authentication → Providers → Email** and disable **Allow new users to sign
+up**. Confirm the server-side invite/allowlist enforcement test passes. This
+is required by Finnhub's written approval; do not treat the browser UI as the
+control.
 
 ### 1. Define application-owned market-data contracts
 
@@ -89,7 +89,7 @@ deterministic fictional data and makes no provider request.
 
 ### 2. Add the quote cache migration and least-privilege access
 
-- Add one deterministic Phase 4 migration that creates `app.quote_cache` with
+- Add one deterministic Phase 4a migration that creates `app.quote_cache` with
   an immutable identity `(provider, market, symbol)` and fields for canonical
   symbol, USD `NUMERIC` price and previous close, derived `NUMERIC` change and
   percentage, provider timestamp, fetched-at timestamp, declared delay,
@@ -124,24 +124,79 @@ deterministic fictional data and makes no provider request.
   enforce the per-user refresh limit before contacting a provider. Return only
   generic safe errors; never return a provider URL, raw response, credential,
   stack trace, account identifier, or provider error message.
+- Treat server-enforced invite-only registration as a deployment prerequisite
+  for this shared-key endpoint. Confirm public signup remains disabled and the
+  allowlist/invite enforcement test passes before enabling live Finnhub access.
 - Apply an explicit development and production CORS-origin allowlist from
-  server-side configuration. Do not use wildcard CORS. Keep the provider key
-  only in the Edge Function secret store (`MARKET_DATA_PROVIDER` and the
-  provider-specific credential); do not add it to `VITE_*`, `.env.example`,
+  server-side configuration. Do not use wildcard CORS. Keep the shared
+  `FINNHUB_API_KEY` only in the Edge Function secret store; do not add it to
+  `VITE_*`, `.env.example`,
   client code, logs, or test fixtures.
-- On a cache miss or expired cache entry, serialize/upsert refreshes per
+- On a cache miss or a cache entry due under the one-refresh-per-XNYS-trading-day
+  policy, serialize/upsert refreshes per
   provider-symbol key so simultaneous portfolio renders do not fan out into
   duplicate provider requests. Fetch a batch where the selected provider
   supports it, validate every untrusted provider response, normalize it, and
   upsert only a complete valid quote. Cache TTL, batch size, refresh rate, and
-  stale threshold are provider configuration values selected from the approved
-  quota/entitlement; they are not hard-coded as a licensing assumption.
+  stale threshold are server-side configuration values consistent with the
+  approved Finnhub free-tier quota; they are not hard-coded in UI code.
 - If refresh succeeds, return `fresh` or explicitly `delayed` data with both
   timestamps. If it is throttled, unavailable, invalid, or times out, return
   the last valid cached quote as `stale` with its exact last-successful time.
   If no cache exists, return an `unavailable` quote record for that symbol and
-  preserve the rest of the batch. Do not overwrite a valid cached quote with a
-  failure response.
+  preserve the rest of the batch. A Finnhub-unsupported or non-returned symbol
+  returns unavailable with the decision-record reason instead of failing
+  silently. Do not overwrite a valid cached quote with a failure response.
+
+### Phase 4a deployment and live verification (Git Bash on Windows)
+
+Complete the prerequisite above first. From the linked repository in Git Bash:
+
+```bash
+# Enter the key without echoing it; this variable exists only in this shell.
+read -rsp 'Finnhub API key: ' FINNHUB_API_KEY; echo
+supabase secrets set "FINNHUB_API_KEY=$FINNHUB_API_KEY"
+supabase secrets list
+
+# Deploy only the Phase 4a function.
+supabase functions deploy market-data
+```
+
+Set the key in **Supabase Dashboard → Edge Functions → Secrets** as an
+alternative to the CLI command. The secret list may confirm the key name only;
+never print or commit its value. Functions read newly set secrets without a
+redeploy. Do not place this key in any `.env` used by Vite or in a `VITE_*`
+variable.
+
+Before deploying the frontend, verify the production key is absent from the
+client bundle. In the same Git Bash session where the key was entered, run:
+
+```bash
+npm run build
+if rg -Fq -- "$FINNHUB_API_KEY" dist; then
+  echo 'FAIL: FINNHUB_API_KEY appears in the client bundle' >&2
+  exit 1
+fi
+echo 'PASS: FINNHUB_API_KEY is absent from the client bundle'
+unset FINNHUB_API_KEY
+```
+
+Use a real, signed-in user's short-lived access token—not a service-role key—to
+call the deployed function. Replace placeholders with the linked project ref,
+publishable key, and a current user JWT obtained through the authenticated app:
+
+```bash
+curl --fail-with-body --request POST \
+  "https://<project-ref>.supabase.co/functions/v1/market-data" \
+  --header "apikey: <publishable-key>" \
+  --header "Authorization: Bearer <user-access-token>" \
+  --header "Content-Type: application/json" \
+  --data '{"operation":"quotes","symbols":["QQQ"]}'
+```
+
+Expect a normalized quote result or an explicit unavailable/stale result, never
+a provider-shaped error. Also invoke with an unsupported symbol and an invalid
+token to confirm safe per-symbol unavailability and authentication rejection.
 
 ### 4. Replace temporary holdings prices with resilient quote queries
 
@@ -178,7 +233,8 @@ deterministic fictional data and makes no provider request.
 - Add Edge Function tests for missing/invalid JWT, supplied `user_id`, invalid
   or oversized symbol lists, unauthorized origin, rate limiting, cache hit,
   cache miss, valid upsert, throttling, timeout, invalid provider response,
-  partial-batch failure, stale fallback, and no-cache unavailable result.
+  partial-batch failure, stale fallback, no-cache unavailable result, and an
+  explicit unsupported/non-returned Finnhub symbol result.
 - Extend `supabase/tests/rls.sql` to prove `anon` has no quote-cache or
   rate-counter privileges, an authenticated user cannot mutate either table,
   and policies/grants do not expose write paths. Add focused UI tests that
@@ -193,18 +249,20 @@ deterministic fictional data and makes no provider request.
 
 ## Verification
 
-After the provider-selection gate and implementation, run `npm run build`,
-`npm run lint`, `npm run test`, and `npm run test:rls`. Exercise the deployed
-authenticated route with a provider-approved test symbol and a forced provider
-failure; confirm no credential reaches browser network requests, stale data
-shows its true timestamp, and the holdings table remains intact. Confirm the
-anonymous fictional demo issues no market-data request and has no database
-access.
+At the end of each subphase, run `npm run build`, `npm run lint`, `npm run
+test`, and `npm run test:rls`. Before completing 4b, exercise the deployed
+authenticated route with a supported US-equity symbol, an unsupported symbol,
+and a forced provider failure; confirm no credential reaches browser network
+requests, stale data shows its true timestamp, excluded totals are explained,
+and the holdings table remains intact. Confirm the anonymous fictional demo
+issues no market-data request and has no database access.
 
 ## Boundaries
 
-- No provider is selected by this plan and no production credential, paid plan,
-  data entitlement, or public-display right is assumed.
+- Finnhub free tier and the written approval recorded in
+  `MARKET-DATA-LICENSE.md` are the provider decision; no provider research or
+  selection gate remains. The shared server-side key is permitted only while
+  the invite-only, friends-and-family, and no-monetization conditions hold.
 - No live data is added to the public demo. It remains bundled fictional data.
 - No historical portfolio snapshots or historical backfill is implemented;
   historical provider methods are contractual preparation only.
