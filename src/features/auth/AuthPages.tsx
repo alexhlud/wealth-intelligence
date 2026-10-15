@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, Outlet, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
@@ -12,7 +12,7 @@ const genericAuthError = 'We couldn’t complete that request. Please check your
 const resetNotice = 'If an account matches that email address, a recovery link is on its way.'
 
 export function AuthPage() {
-  const session = useSession(); const [searchParams, setSearchParams] = useSearchParams(); const [mode, setMode] = useState<'sign-in' | 'sign-up' | 'reset'>('sign-in'); const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null); const [isSubmitting, setIsSubmitting] = useState(false); const [captchaToken, setCaptchaToken] = useState<string | null>(null); const [captchaReset, setCaptchaReset] = useState(0)
+  const session = useSession(); const [searchParams, setSearchParams] = useSearchParams(); const [mode, setMode] = useState<'sign-in' | 'sign-up' | 'reset'>(() => searchParams.get('mode') === 'reset' ? 'reset' : 'sign-in'); const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null); const [isSubmitting, setIsSubmitting] = useState(false); const [captchaToken, setCaptchaToken] = useState<string | null>(null); const [captchaReset, setCaptchaReset] = useState(0)
   if (session && searchParams.get('signout') !== 'confirm') return <Navigate to="/holdings" replace />
   const resetCaptcha = () => { setCaptchaToken(null); setCaptchaReset((value) => value + 1) }
   const changeMode = (next: 'sign-in' | 'sign-up' | 'reset') => { setMode(next); setError(null); setNotice(null); resetCaptcha() }
@@ -32,9 +32,30 @@ export function AuthPage() {
   return <main className="auth-shell"><section className="auth-panel" aria-labelledby="auth-title"><div className="brand-mark" aria-hidden="true"><KeyRound size={22} /></div><p className="brand-name">Wealth Intelligence</p><h1 id="auth-title">{title}</h1><p className="auth-intro">{intro}</p><form className="auth-form" onSubmit={submit} noValidate><label htmlFor="email">Email address</label><input id="email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} />{mode !== 'reset' && <><label htmlFor="password">Password</label><input id="password" type="password" autoComplete={isSignUp ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} /></>}<Turnstile onToken={setCaptchaToken} resetKey={captchaReset} />{error && <p className="form-message error" role="alert">{error}</p>}{notice && <p className="form-message notice" role="status">{notice}</p>}<button className="primary-button" type="submit" disabled={isSubmitting}>{isSignUp ? <UserPlus size={18} /> : <LogIn size={18} />}{isSubmitting ? 'Please wait…' : isSignUp ? 'Create account' : mode === 'reset' ? 'Send recovery link' : 'Sign in'}</button></form><div className="auth-links"><button className="text-button" type="button" onClick={() => changeMode(isSignUp ? 'sign-in' : 'sign-up')}>{isSignUp ? 'Already have an account? Sign in' : 'New here? Create an account'}</button>{mode !== 'reset' ? <button className="text-button" type="button" onClick={() => changeMode('reset')}>Forgot your password?</button> : <button className="text-button" type="button" onClick={() => changeMode('sign-in')}>Return to sign in</button>}</div></section></main>
 }
 
+function EmailLinkCallback({ flow }: { flow: 'recovery' | 'signup' }) {
+  const navigate = useNavigate(); const [password, setPassword] = useState(''); const [error, setError] = useState<string | null>(null); const [isSubmitting, setIsSubmitting] = useState(false); const [status, setStatus] = useState<'checking' | 'ready' | 'invalid'>('checking'); const [hashParams] = useState(() => new URLSearchParams(window.location.hash.slice(1)))
+  useEffect(() => {
+    const accessToken = hashParams.get('access_token'); const refreshToken = hashParams.get('refresh_token')
+    if (!accessToken || !refreshToken) { setStatus('invalid'); return }
+    let active = true
+    void supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ data, error: sessionError }) => {
+      if (!active) return
+      setStatus(sessionError || !data.session ? 'invalid' : 'ready')
+      window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}`)
+    })
+    return () => { active = false }
+  }, [hashParams])
+  if (status === 'checking') return <main className="auth-shell"><p className="status-copy">Confirming your secure session…</p></main>
+  if (status === 'invalid' && flow === 'recovery') return <main className="auth-shell"><section className="auth-panel" aria-labelledby="recovery-link-title"><h1 id="recovery-link-title">This recovery link can’t be used</h1><p className="auth-intro">Recovery links expire and can be used only once. Request a new link to continue.</p><button className="primary-button" type="button" onClick={() => navigate('/auth?mode=reset', { replace: true })}>Request a new recovery link</button></section></main>
+  if (status === 'invalid') return <main className="auth-shell"><section className="auth-panel"><h1>Check your email</h1><p className="auth-intro">Complete the link in your email, then return here to sign in.</p></section></main>
+  if (flow === 'signup') return <Navigate to="/holdings" replace />
+  async function savePassword(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const parsed = invitationPasswordInputSchema.safeParse({ password }); if (!parsed.success) { setError(validationErrorMessage('invitationPassword', parsed.error)); return }; setIsSubmitting(true); const { error: updateError } = await supabase.auth.updateUser(parsed.data); setIsSubmitting(false); if (updateError) { setError('We couldn’t set your password. Please try again.'); return }; navigate('/holdings', { replace: true }) }
+  return <main className="auth-shell"><section className="auth-panel" aria-labelledby="set-password-title"><h1 id="set-password-title">Set a new password</h1><p className="auth-intro">Choose a new password to finish recovering your private workspace.</p><form className="auth-form" onSubmit={savePassword} noValidate><label htmlFor="new-password">New password</label><input id="new-password" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />{error && <p className="form-message error" role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving…' : 'Continue to portfolio'}</button></form></section></main>
+}
+
 export function AuthCallbackPage() {
   const session = useSession(); const navigate = useNavigate(); const [searchParams] = useSearchParams(); const [password, setPassword] = useState(''); const [error, setError] = useState<string | null>(null); const [isSubmitting, setIsSubmitting] = useState(false); const callbackType = searchParams.get('flow') ?? new URLSearchParams(window.location.hash.slice(1)).get('type')
-  if (session && callbackType === 'signup') return <Navigate to="/holdings" replace />
+  if (callbackType === 'recovery' || callbackType === 'signup') return <EmailLinkCallback flow={callbackType} />
   if (session && callbackType !== 'recovery' && callbackType !== 'invite') return <main className="auth-shell"><section className="auth-panel"><h1>Check your email</h1><p className="auth-intro">Complete the link in your email, then return here to sign in.</p></section></main>
   if (session === undefined) return <main className="auth-shell"><p className="status-copy">Confirming your secure session…</p></main>
   if (session) { async function savePassword(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const parsed = invitationPasswordInputSchema.safeParse({ password }); if (!parsed.success) { setError(validationErrorMessage('invitationPassword', parsed.error)); return }; setIsSubmitting(true); const { error: updateError } = await supabase.auth.updateUser(parsed.data); setIsSubmitting(false); if (updateError) { setError('We couldn’t set your password. Please try again.'); return }; navigate('/holdings', { replace: true }) }; return <main className="auth-shell"><section className="auth-panel" aria-labelledby="set-password-title"><h1 id="set-password-title">Set a new password</h1><p className="auth-intro">Choose a new password to finish recovering your private workspace.</p><form className="auth-form" onSubmit={savePassword} noValidate><label htmlFor="new-password">New password</label><input id="new-password" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />{error && <p className="form-message error" role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving…' : 'Continue to portfolio'}</button></form></section></main> }
