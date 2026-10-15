@@ -47,7 +47,7 @@ export function GlobalSignOutButton() {
   return <button className="button-text" type="button" onClick={() => { queryClient.clear(); navigate('/auth?signout=confirm') }}>Sign out</button>
 }
 
-function CodeForm({ factorId, submitLabel, onVerified }: { factorId: string; submitLabel: string; onVerified: () => Promise<void> }) {
+export function MfaCodeForm({ factorId, submitLabel, onVerified }: { factorId: string; submitLabel: string; onVerified: () => Promise<void> }) {
   const [code, setCode] = useState('')
   const [challengeId, setChallengeId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -80,6 +80,8 @@ function CodeForm({ factorId, submitLabel, onVerified }: { factorId: string; sub
     <button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Verifying…' : submitLabel}</button>
   </form>
 }
+
+const CodeForm = MfaCodeForm
 
 export function MfaChallengePage() {
   const session = useSession()
@@ -133,7 +135,7 @@ export function MfaChallengePage() {
     <div className="brand-mark" aria-hidden="true"><KeyRound size={22} /></div>
     <h1 id="mfa-challenge-title">Confirm it’s you</h1>
     <p className="auth-intro">Enter a code from one of your authenticator apps to open your private workspace.</p>
-    <CodeForm factorId={factors[0]!.id} submitLabel="Verify and continue" onVerified={async () => { navigate('/holdings', { replace: true }) }} />
+    <MfaCodeForm factorId={factors[0]!.id} submitLabel="Verify and continue" onVerified={async () => { navigate('/holdings', { replace: true }) }} />
     <button className="button-text" type="button" onClick={() => void exitChallenge()} disabled={isExiting}>{isExiting ? 'Signing out…' : 'Return to sign in'}</button>
   </section></main>
 }
@@ -208,7 +210,7 @@ export function SecurityPage() {
       <h2 id="enrollment-title">Set up your authenticator</h2><p>Scan this QR code with an authenticator app. The setup value is shown only while this page remains open.</p>
       <img className="totp-qr" src={enrollment.qrCode} alt="QR code for authenticator setup" />
       <label className="manual-secret" htmlFor="manual-setup-value">Or enter this setup value manually<input id="manual-setup-value" readOnly value={enrollment.secret} /></label>
-      <CodeForm factorId={enrollment.factorId} submitLabel="Verify authenticator" onVerified={async () => { clearEnrollment(); await reload() }} />
+      <MfaCodeForm factorId={enrollment.factorId} submitLabel="Verify authenticator" onVerified={async () => { clearEnrollment(); await reload() }} />
       <button className="button-text" type="button" onClick={() => void cancelEnrollment()}>Cancel setup</button>
       {factors.length > 0 && <p className="security-note">Keep this recovery factor in a separate app or device. Supabase does not provide recovery codes; if every factor is lost, this application cannot restore access.</p>}
     </section>}

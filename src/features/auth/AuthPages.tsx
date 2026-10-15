@@ -7,6 +7,7 @@ import { invitationPasswordInputSchema, passwordResetInputSchema, signInInputSch
 import { supabase } from '@/lib/supabase'
 import { useSession } from './session'
 import { Turnstile } from './Turnstile'
+import { MfaCodeForm } from './MfaPages'
 
 const genericAuthError = 'We couldn’t complete that request. Please check your details and try again.'
 const resetNotice = 'If an account matches that email address, a recovery link is on its way.'
@@ -33,21 +34,36 @@ export function AuthPage() {
 }
 
 function EmailLinkCallback({ flow }: { flow: 'recovery' | 'signup' }) {
-  const navigate = useNavigate(); const [password, setPassword] = useState(''); const [error, setError] = useState<string | null>(null); const [isSubmitting, setIsSubmitting] = useState(false); const [status, setStatus] = useState<'checking' | 'ready' | 'invalid'>('checking'); const [hashParams] = useState(() => new URLSearchParams(window.location.hash.slice(1)))
+  const navigate = useNavigate(); const [password, setPassword] = useState(''); const [error, setError] = useState<string | null>(null); const [isSubmitting, setIsSubmitting] = useState(false); const [status, setStatus] = useState<'checking' | 'mfa' | 'ready' | 'invalid' | 'security-error'>('checking'); const [factorId, setFactorId] = useState<string | null>(null); const [hashParams] = useState(() => new URLSearchParams(window.location.hash.slice(1)))
+  async function assessRecoveryMfa() {
+    const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+    if (assuranceError) { setStatus('security-error'); return }
+    if (assurance?.currentLevel === 'aal1' && assurance.nextLevel === 'aal2') {
+      const { data: factorData, error: factorError } = await supabase.auth.mfa.listFactors()
+      const factor = factorData?.all.find((candidate) => candidate.status === 'verified' && candidate.factor_type === 'totp')
+      if (factorError || !factor) { setStatus('security-error'); return }
+      setFactorId(factor.id); setStatus('mfa'); return
+    }
+    setStatus('ready')
+  }
   useEffect(() => {
     const accessToken = hashParams.get('access_token'); const refreshToken = hashParams.get('refresh_token')
     if (!accessToken || !refreshToken) { setStatus('invalid'); return }
     let active = true
     void supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ data, error: sessionError }) => {
       if (!active) return
-      setStatus(sessionError || !data.session ? 'invalid' : 'ready')
+      if (sessionError || !data.session) setStatus('invalid')
+      else if (flow === 'recovery') void assessRecoveryMfa()
+      else setStatus('ready')
       window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}`)
     })
     return () => { active = false }
-  }, [hashParams])
+  }, [flow, hashParams])
   if (status === 'checking') return <main className="auth-shell"><p className="status-copy">Confirming your secure session…</p></main>
   if (status === 'invalid' && flow === 'recovery') return <main className="auth-shell"><section className="auth-panel" aria-labelledby="recovery-link-title"><h1 id="recovery-link-title">This recovery link can’t be used</h1><p className="auth-intro">Recovery links expire and can be used only once. Request a new link to continue.</p><button className="primary-button" type="button" onClick={() => navigate('/auth?mode=reset', { replace: true })}>Request a new recovery link</button></section></main>
   if (status === 'invalid') return <main className="auth-shell"><section className="auth-panel"><h1>Check your email</h1><p className="auth-intro">Complete the link in your email, then return here to sign in.</p></section></main>
+  if (status === 'security-error') return <main className="auth-shell"><section className="auth-panel"><h1>Security check unavailable</h1><p className="auth-intro" role="alert">We couldn’t complete that security action. Please try again.</p><button className="button button-secondary" type="button" onClick={() => window.location.reload()}>Try again</button></section></main>
+  if (status === 'mfa' && factorId) return <main className="auth-shell"><section className="auth-panel" aria-labelledby="recovery-mfa-title"><div className="brand-mark" aria-hidden="true"><KeyRound size={22} /></div><h1 id="recovery-mfa-title">Confirm it’s you</h1><p className="auth-intro">An authenticator code is required because this account has multi-factor authentication enabled. Enter a code to continue resetting your password.</p><MfaCodeForm factorId={factorId} submitLabel="Verify and set password" onVerified={assessRecoveryMfa} /><p className="security-note">If you lose both your password and all authenticator factors, this account cannot be recovered.</p></section></main>
   if (flow === 'signup') return <Navigate to="/holdings" replace />
   async function savePassword(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const parsed = invitationPasswordInputSchema.safeParse({ password }); if (!parsed.success) { setError(validationErrorMessage('invitationPassword', parsed.error)); return }; setIsSubmitting(true); const { error: updateError } = await supabase.auth.updateUser(parsed.data); setIsSubmitting(false); if (updateError) { setError('We couldn’t set your password. Please try again.'); return }; navigate('/holdings', { replace: true }) }
   return <main className="auth-shell"><section className="auth-panel" aria-labelledby="set-password-title"><h1 id="set-password-title">Set a new password</h1><p className="auth-intro">Choose a new password to finish recovering your private workspace.</p><form className="auth-form" onSubmit={savePassword} noValidate><label htmlFor="new-password">New password</label><input id="new-password" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />{error && <p className="form-message error" role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving…' : 'Continue to portfolio'}</button></form></section></main>
