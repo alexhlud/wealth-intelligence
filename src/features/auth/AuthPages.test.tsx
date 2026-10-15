@@ -4,12 +4,12 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AuthCallbackPage, AuthPage } from './AuthPages'
 
-const { setSession, signInWithPassword, updateUser, useSession } = vi.hoisted(() => ({ setSession: vi.fn(), signInWithPassword: vi.fn(), updateUser: vi.fn(), useSession: vi.fn() }))
+const { challenge, getAuthenticatorAssuranceLevel, listFactors, setSession, signInWithPassword, updateUser, useSession, verify } = vi.hoisted(() => ({ challenge: vi.fn(), getAuthenticatorAssuranceLevel: vi.fn(), listFactors: vi.fn(), setSession: vi.fn(), signInWithPassword: vi.fn(), updateUser: vi.fn(), useSession: vi.fn(), verify: vi.fn() }))
 
 vi.mock('./session', () => ({ useSession }))
 vi.mock('./Turnstile', () => ({ Turnstile: ({ onToken }: { onToken: (token: string) => void }) => <button type="button" onClick={() => onToken('captcha-token')}>Complete verification</button> }))
 vi.mock('@/lib/supabase', () => ({
-  supabase: { auth: { setSession, updateUser, signOut: vi.fn(), signUp: vi.fn(), resetPasswordForEmail: vi.fn(), signInWithPassword } },
+  supabase: { auth: { setSession, updateUser, signOut: vi.fn(), signUp: vi.fn(), resetPasswordForEmail: vi.fn(), signInWithPassword, mfa: { challenge, getAuthenticatorAssuranceLevel, listFactors, verify } } },
 }))
 
 function renderCallback(flow: 'signup' | 'recovery', hash = '#access_token=access-token&refresh_token=refresh-token&type=recovery') {
@@ -18,7 +18,7 @@ function renderCallback(flow: 'signup' | 'recovery', hash = '#access_token=acces
 }
 
 describe('AuthCallbackPage', () => {
-  afterEach(() => { cleanup(); useSession.mockReset(); setSession.mockReset(); updateUser.mockReset(); signInWithPassword.mockReset(); window.history.replaceState({}, '', '/') })
+  afterEach(() => { cleanup(); challenge.mockReset(); getAuthenticatorAssuranceLevel.mockReset(); listFactors.mockReset(); setSession.mockReset(); signInWithPassword.mockReset(); updateUser.mockReset(); useSession.mockReset(); verify.mockReset(); window.history.replaceState({}, '', '/') })
 
   it('routes a confirmed signup to holdings instead of the password recovery screen', async () => {
     useSession.mockReturnValue(null)
@@ -30,9 +30,10 @@ describe('AuthCallbackPage', () => {
     expect(screen.queryByText(/finish recovering your private workspace/)).toBeNull()
   })
 
-  it('establishes a valid recovery session before setting the password', async () => {
+  it('updates directly after recovery when the account has no verified factor', async () => {
     useSession.mockReturnValue(null)
     setSession.mockResolvedValue({ data: { session: {} }, error: null })
+    getAuthenticatorAssuranceLevel.mockResolvedValue({ data: { currentLevel: 'aal1', nextLevel: 'aal1' }, error: null })
     updateUser.mockResolvedValue({ error: null })
     renderCallback('recovery')
 
@@ -42,6 +43,29 @@ describe('AuthCallbackPage', () => {
     await waitFor(() => expect(updateUser).toHaveBeenCalledWith({ password: 'new-password' }))
     expect(setSession).toHaveBeenCalledWith({ access_token: 'access-token', refresh_token: 'refresh-token' })
     expect(await screen.findByText('Holdings destination')).toBeTruthy()
+  })
+
+  it('requires a successful MFA challenge before updating a recovered account password', async () => {
+    useSession.mockReturnValue(null)
+    setSession.mockResolvedValue({ data: { session: {} }, error: null })
+    getAuthenticatorAssuranceLevel.mockResolvedValueOnce({ data: { currentLevel: 'aal1', nextLevel: 'aal2' }, error: null }).mockResolvedValueOnce({ data: { currentLevel: 'aal2', nextLevel: 'aal2' }, error: null })
+    listFactors.mockResolvedValue({ data: { all: [{ id: 'factor-1', status: 'verified', factor_type: 'totp' }] }, error: null })
+    challenge.mockResolvedValue({ data: { id: 'challenge-1' }, error: null })
+    verify.mockResolvedValue({ error: null })
+    updateUser.mockResolvedValue({ error: null })
+    renderCallback('recovery')
+
+    expect(await screen.findByText(/authenticator code is required because this account has multi-factor authentication enabled/i)).toBeTruthy()
+    expect(screen.getByText(/lose both your password and all authenticator factors/i)).toBeTruthy()
+    expect(updateUser).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText('Authenticator code'), { target: { value: '123456' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Verify and set password' }))
+    await waitFor(() => expect(verify).toHaveBeenCalledWith({ factorId: 'factor-1', challengeId: 'challenge-1', code: '123456' }))
+    expect(updateUser).not.toHaveBeenCalled()
+
+    fireEvent.change(await screen.findByLabelText('New password'), { target: { value: 'new-password' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to portfolio' }))
+    await waitFor(() => expect(updateUser).toHaveBeenCalledWith({ password: 'new-password' }))
   })
 
   it.each(['', '#access_token=expired-access&refresh_token=expired-refresh'])('shows the request-a-new-link state when recovery credentials are missing or invalid', async (hash) => {
