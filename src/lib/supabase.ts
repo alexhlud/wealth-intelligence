@@ -14,6 +14,8 @@ export const supabase = createClient(url, key, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true,
+    // AuthCallbackPage exchanges email-link credentials before clearing the URL
+    // fragment, so recovery and signup confirmation share one explicit handoff.
+    detectSessionInUrl: false,
   },
 })
