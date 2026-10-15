@@ -583,5 +583,23 @@ select lives_ok($$select * from app.create_position(
   'AAL2 can invoke elevated create_position');
 reset role;
 
+select ok(
+  not has_table_privilege('anon', 'app.quote_cache', 'SELECT') and
+  not has_table_privilege('anon', 'app.quote_cache', 'INSERT') and
+  not has_table_privilege('anon', 'app.market_data_refresh_rate_windows', 'SELECT') and
+  not has_table_privilege('anon', 'app.market_data_refresh_rate_windows', 'INSERT'),
+  'anon has no quote-cache or refresh-counter privileges');
+select ok(
+  not has_table_privilege('authenticated', 'app.quote_cache', 'SELECT') and
+  not has_table_privilege('authenticated', 'app.quote_cache', 'INSERT') and
+  not has_table_privilege('authenticated', 'app.market_data_refresh_rate_windows', 'SELECT') and
+  not has_table_privilege('authenticated', 'app.market_data_refresh_rate_windows', 'INSERT'),
+  'authenticated has no direct quote-cache or refresh-counter write path');
+select is((select count(*) from pg_catalog.pg_policy p
+           join pg_catalog.pg_class c on c.oid = p.polrelid
+           join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+           where n.nspname = 'app' and c.relname in ('quote_cache', 'market_data_refresh_rate_windows')),
+  0::bigint, 'quote cache and rate counter expose no direct RLS policies');
+
 select * from finish();
 rollback;
