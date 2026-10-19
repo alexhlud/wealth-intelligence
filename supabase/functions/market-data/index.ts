@@ -1,11 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.112.4'
-import { z } from 'npm:zod@4.4.3'
-import { fetchFinnhubQuote, shouldUseCachedQuote } from './finnhub.ts'
-
-const symbolsSchema = z.object({
-  operation: z.literal('quotes'),
-  symbols: z.array(z.string().trim().toUpperCase().regex(/^[A-Z][A-Z0-9.-]{0,9}$/)).min(1).max(25),
-}).transform(({ operation, symbols }) => ({ operation, symbols: [...new Set(symbols)] }))
+import { fetchFinnhubQuote, quoteRequestSchema, shouldUseCachedQuote } from './finnhub.ts'
 
 const projectUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const publishableKey = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY') ?? ''
@@ -49,7 +43,7 @@ Deno.serve(async (request) => {
   const { data: { user }, error: authError } = await authClient.auth.getUser(token)
   if (authError || !user) return json(request, { error: 'Authentication required.' }, 401)
 
-  const body = symbolsSchema.safeParse(await request.json().catch(() => null))
+  const body = quoteRequestSchema.safeParse(await request.json().catch(() => null))
   if (!body.success) return json(request, { error: 'Request could not be processed.' }, 400)
   const admin = createClient(projectUrl, serviceRoleKey, { db: { schema: 'app' }, auth: { persistSession: false, autoRefreshToken: false } })
   const windowStartedAt = new Date(Math.floor(Date.now() / 60_000) * 60_000).toISOString()
@@ -77,7 +71,7 @@ Deno.serve(async (request) => {
     if (cached && shouldUseCachedQuote(true, fetchedDay, tradingDay, isNewYorkTradingDay())) return { symbol, price: String(cached.price), previousClose: String(cached.previous_close), change: String(cached.change), changePercent: String(cached.change_percent), marketTimestamp: cached.provider_timestamp, fetchedAt: cached.fetched_at, lastSuccessfulAt: cached.last_successful_at, source: 'finnhub', freshness: fetchedDay === tradingDay ? 'fresh' : 'stale', delayMinutes: cached.delay_minutes, unavailableReason: null }
     try {
       const quote = await fetchFinnhubQuote(symbol, finnhubApiKey)
-      if (quote.kind === 'unsupported_symbol' && !cached) return { symbol, price: null, previousClose: null, change: null, changePercent: null, marketTimestamp: null, fetchedAt: now, lastSuccessfulAt: null, source: 'finnhub', freshness: 'unavailable', delayMinutes: null, unavailableReason: 'unsupported_symbol' }
+      if (quote.kind === 'not_found' && !cached) return { symbol, price: null, previousClose: null, change: null, changePercent: null, marketTimestamp: null, fetchedAt: now, lastSuccessfulAt: null, source: 'finnhub', freshness: 'unavailable', delayMinutes: null, unavailableReason: 'not_found' }
       if (quote.kind !== 'quote') throw new Error('Quote unavailable')
       const row = { provider: 'finnhub', market: 'us_equities', symbol, price: quote.price, previous_close: quote.previousClose, change: quote.change, change_percent: quote.changePercent, provider_timestamp: quote.marketTimestamp, fetched_at: now, last_successful_at: now, delay_minutes: null, source_version: 'finnhub-v1', updated_at: now }
       const { error: cacheWriteError } = await admin.from('quote_cache').upsert(row)

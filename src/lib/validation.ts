@@ -58,7 +58,7 @@ export type PortfolioResponse = z.infer<typeof portfolioResponseRowSchema>
 const accountTypeSchema = z.enum(['brokerage', 'retirement', 'savings', 'cash', 'crypto_wallet', 'other'])
 const accountResponseRowSchema = z.object({
   id: z.string().uuid(), portfolio_id: z.string().uuid(), name: z.string().trim().min(1).max(80),
-  institution_name: nullableText(120), account_type: accountTypeSchema, include_in_net_worth: z.boolean(),
+  institution_name: nullableText(120), account_type: accountTypeSchema, include_in_net_worth: z.boolean(), currency_code: z.string().regex(/^[A-Z]{3}$/).optional(),
 })
 export const accountResponseSchema = z.array(accountResponseRowSchema)
 export type AccountResponse = z.infer<typeof accountResponseRowSchema>

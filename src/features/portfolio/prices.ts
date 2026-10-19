@@ -1,8 +1,3 @@
-export const HARDCODED_USD_PRICE_BY_SYMBOL: Readonly<Record<string, string>> = {
-  QQQ: '500.00',
-  VOO: '600.00',
-}
-
 /** Accepts canonical positive decimal strings; calculations never coerce to JavaScript numbers. */
 export function marketValue(quantity: string, price: string): string {
   const quantityParts = quantity.split('.')
