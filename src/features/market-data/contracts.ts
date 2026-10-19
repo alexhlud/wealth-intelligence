@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 export const canonicalSymbolSchema = z.string().trim().toUpperCase().regex(/^[A-Z][A-Z0-9.-]{0,9}$/)
 export const decimalStringSchema = z.string().regex(/^(?:0|[1-9]\d*)(?:\.\d{1,12})?$/)
+export const signedDecimalStringSchema = z.string().regex(/^-?(?:0|[1-9]\d*)(?:\.\d{1,12})?$/)
 export const quoteFreshnessSchema = z.enum(['fresh', 'stale', 'delayed', 'unavailable'])
 export const quoteUnavailableReasonSchema = z.enum(['unsupported_symbol', 'not_found', 'provider_unavailable', 'invalid_response'])
 
@@ -9,8 +10,8 @@ export const quoteSchema = z.object({
   symbol: canonicalSymbolSchema,
   price: decimalStringSchema.nullable(),
   previousClose: decimalStringSchema.nullable(),
-  change: decimalStringSchema.nullable(),
-  changePercent: decimalStringSchema.nullable(),
+  change: signedDecimalStringSchema.nullable(),
+  changePercent: signedDecimalStringSchema.nullable(),
   marketTimestamp: z.string().datetime({ offset: true }).nullable(),
   fetchedAt: z.string().datetime({ offset: true }),
   lastSuccessfulAt: z.string().datetime({ offset: true }).nullable(),
