@@ -2,11 +2,8 @@
 
 ## Scope and status
 
-This is a point-in-time model of the implemented Phase 0.5, 2a, 2b, 3b-1,
-and 3b-2 application. It describes controls that are present in the checked-in
-application and database migrations; it does not claim planned Phase 4+
-controls as protection. In particular, no Supabase Edge Function and no market
-data provider exist today.
+This model covers the implemented application through Phase 4 market data.
+Controls describe checked-in code and do not prove production configuration.
 
 The application is a browser-delivered, authenticated personal-wealth tracker.
 It does not connect to banks or brokerages and contains no trading capability.
@@ -21,7 +18,9 @@ It does not connect to banks or brokerages and contains no trading capability.
 | Supabase Postgres / Data API | JWT-derived database role and `auth.uid()`, table queries, and RPC calls | The `app` schema is exposed through the Data API (`supabase/config.toml`) only to authenticated users. RLS, grants, foreign keys, constraints, and immutable-history triggers enforce ownership and data invariants. |
 | SECURITY DEFINER RPCs | Authenticated caller input for atomic position/snapshot writes | Four narrowly granted RPCs cross an elevated privilege boundary: `app.create_position`, `app.edit_position`, `app.create_portfolio_snapshot`, and `app.correct_portfolio_snapshot`. They use `auth.uid()`, pin `search_path` to empty, validate/lock owned rows, and are documented in the migrations. Internal snapshot insertion is not executable by authenticated callers. |
 
-There is no Edge Function boundary and no market-data-provider boundary yet. There are therefore no server-side provider credentials, quote-cache records, provider requests, or provider-response handling to assess.
+The authenticated market-data Edge Function crosses a separate browser-to-server
+boundary and calls Finnhub with a server-side key. Shared cached quotes and
+per-user counters are inaccessible to browser roles.
 
 ## Assets and sensitivity
 
@@ -98,9 +97,9 @@ configuration drift or unknown implementation defects.
 
 ## Known limitations
 
-- No Edge Functions, market-data provider, quote cache, provider credential, or
-  server-side market-data security boundary exists yet. The holdings UI’s
-  temporary fixed prices are not live market data.
+- The market-data quota counter is a non-atomic read/upsert, and there is no
+  global provider limiter or per-symbol refresh lock. Concurrent requests can
+  exceed intended limits; weekends are handled but exchange holidays are not.
 - MFA/AAL enforcement, Supabase-native Turnstile wiring, and global sign-out
   are implemented. Supabase dashboard evidence for exact origins, CAPTCHA
   secret, rate limits, password policy, leaked-password protection, and the
@@ -129,6 +128,9 @@ configuration drift or unknown implementation defects.
   separate operational controls and are not represented by this threat model.
 
 ## Decision: open registration
+
+Historical proposal, superseded for live Finnhub data by the Phase 4
+invite-only licensing conditions in `MARKET-DATA-LICENSE.md`.
 
 Registration will be open to the public rather than invite-only, so the
 project can be shown to anyone. This removes the justification for two
@@ -161,3 +163,22 @@ browser download and revokes the object URL afterward. The remaining accepted
 availability risk is unchanged: there is no unattended backup, server-side
 copy, email delivery, or restore exercise. A user-operated monthly reminder
 does not make or retain a file.
+
+## Phase 4: browser → Edge Function → Finnhub
+
+The function validates a JWT and bounded symbols, applies an origin allowlist,
+and uses a service-role client for the shared quote cache and rate counter.
+Browser roles have no direct privileges on those tables. The Finnhub key is an
+Edge Function secret; provider requests and raw responses stay server-side.
+The adapter validates provider data and normalizes decimal strings before
+caching. The UI validates returned quotes, marks stale or delayed values, and
+excludes unavailable holdings from totals. Failed refreshes retain cached data.
+
+Credential theft remains possible through compromised server configuration or
+privileged access. A stolen user session can consume quota. The per-user
+counter is non-atomic, there is no global provider limit or refresh lock, and
+cache retention is not automated. Validation cannot establish the truth or
+exchange eligibility of a plausible but poisoned quote. Invite-only signup,
+known users, and no monetization are licensing prerequisites that depend on
+operator and Supabase dashboard enforcement; a change requires renewed written
+approval before live data remains enabled. See `MARKET-DATA-LICENSE.md`.

@@ -586,14 +586,22 @@ reset role;
 select ok(
   not has_table_privilege('anon', 'app.quote_cache', 'SELECT') and
   not has_table_privilege('anon', 'app.quote_cache', 'INSERT') and
+  not has_table_privilege('anon', 'app.quote_cache', 'UPDATE') and
+  not has_table_privilege('anon', 'app.quote_cache', 'DELETE') and
   not has_table_privilege('anon', 'app.market_data_refresh_rate_windows', 'SELECT') and
-  not has_table_privilege('anon', 'app.market_data_refresh_rate_windows', 'INSERT'),
+  not has_table_privilege('anon', 'app.market_data_refresh_rate_windows', 'INSERT') and
+  not has_table_privilege('anon', 'app.market_data_refresh_rate_windows', 'UPDATE') and
+  not has_table_privilege('anon', 'app.market_data_refresh_rate_windows', 'DELETE'),
   'anon has no quote-cache or refresh-counter privileges');
 select ok(
   not has_table_privilege('authenticated', 'app.quote_cache', 'SELECT') and
   not has_table_privilege('authenticated', 'app.quote_cache', 'INSERT') and
+  not has_table_privilege('authenticated', 'app.quote_cache', 'UPDATE') and
+  not has_table_privilege('authenticated', 'app.quote_cache', 'DELETE') and
   not has_table_privilege('authenticated', 'app.market_data_refresh_rate_windows', 'SELECT') and
-  not has_table_privilege('authenticated', 'app.market_data_refresh_rate_windows', 'INSERT'),
+  not has_table_privilege('authenticated', 'app.market_data_refresh_rate_windows', 'INSERT') and
+  not has_table_privilege('authenticated', 'app.market_data_refresh_rate_windows', 'UPDATE') and
+  not has_table_privilege('authenticated', 'app.market_data_refresh_rate_windows', 'DELETE'),
   'authenticated has no direct quote-cache or refresh-counter write path');
 select is((select count(*) from pg_catalog.pg_policy p
            join pg_catalog.pg_class c on c.oid = p.polrelid
