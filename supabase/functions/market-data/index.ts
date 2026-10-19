@@ -1,21 +1,15 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.112.4'
 import { fetchFinnhubQuote, quoteRequestSchema, shouldUseCachedQuote } from './finnhub.ts'
+import { corsHeaders, corsPreflight, parseAllowedOrigins } from './cors.ts'
 
 const projectUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const publishableKey = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const finnhubApiKey = Deno.env.get('FINNHUB_API_KEY') ?? ''
-const allowedOrigins = (Deno.env.get('MARKET_DATA_ALLOWED_ORIGINS') ?? 'http://localhost:5173').split(',').map((value) => value.trim()).filter(Boolean)
-
-function corsHeaders(request: Request): HeadersInit {
-  const origin = request.headers.get('origin')
-  return origin && allowedOrigins.includes(origin)
-    ? { 'access-control-allow-origin': origin, 'vary': 'Origin', 'access-control-allow-headers': 'authorization, apikey, content-type', 'access-control-allow-methods': 'POST, OPTIONS' }
-    : { 'vary': 'Origin' }
-}
+const allowedOrigins = parseAllowedOrigins(Deno.env.get('MARKET_DATA_ALLOWED_ORIGINS'))
 
 function json(request: Request, body: unknown, status = 200) {
-  return Response.json(body, { status, headers: corsHeaders(request) })
+  return Response.json(body, { status, headers: corsHeaders(request, allowedOrigins) })
 }
 
 function newYorkTradingDay(value = new Date()): string {
@@ -32,7 +26,7 @@ function isNewYorkTradingDay(value = new Date()): boolean {
 }
 
 Deno.serve(async (request) => {
-  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(request) })
+  if (request.method === 'OPTIONS') return corsPreflight(request, allowedOrigins)
   if (request.method !== 'POST') return json(request, { error: 'Request could not be processed.' }, 405)
   if (!projectUrl || !publishableKey || !serviceRoleKey || !finnhubApiKey) return json(request, { error: 'Service is unavailable.' }, 503)
   if (request.headers.get('origin') && !allowedOrigins.includes(request.headers.get('origin')!)) return json(request, { error: 'Request could not be processed.' }, 403)

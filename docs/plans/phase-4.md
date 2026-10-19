@@ -132,6 +132,12 @@ control.
   `FINNHUB_API_KEY` only in the Edge Function secret store; do not add it to
   `VITE_*`, `.env.example`,
   client code, logs, or test fixtures.
+- `MARKET_DATA_ALLOWED_ORIGINS` is the Edge Function environment variable for
+  the complete, comma-separated list of allowed origins. If unset, it defaults
+  to `http://localhost:5173,https://wealth-intelligence.pages.dev,https://motionofwealth.com,https://www.motionofwealth.com`.
+  An explicitly set value replaces the default, so include every origin that
+  should remain allowed when configuring it. Matching is exact; wildcards are
+  not supported. An empty value allows no browser origins.
 - On a cache miss or a cache entry due under the one-refresh-per-XNYS-trading-day
   policy, serialize/upsert refreshes per
   provider-symbol key so simultaneous portfolio renders do not fan out into
