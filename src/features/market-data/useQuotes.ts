@@ -20,9 +20,9 @@ export async function getQuotes(symbols: readonly string[]) {
   return quotes
 }
 
-export function useQuotes(portfolioId: string | undefined, accounts: readonly string[], symbols: readonly string[]) {
+export function useQuotes(portfolioId: string | undefined, symbols: readonly string[]) {
   return useQuery({
-    queryKey: ['quotes', portfolioId, [...accounts].sort(), [...symbols].sort()],
+    queryKey: ['quotes', portfolioId, [...symbols].sort()],
     queryFn: () => getQuotes([...symbols].sort()),
     enabled: Boolean(portfolioId && symbols.length),
     staleTime: 5 * 60_000,

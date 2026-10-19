@@ -26,8 +26,9 @@ If any condition changes, disable live Finnhub access and obtain renewed written
 approval before re-enabling it. The anonymous public demo remains bundled
 fictional data and never requests Finnhub.
 
-This phase supports US equities only. A non-US-equity symbol, or a symbol
-Finnhub does not return, receives an explicit unavailable quote with a safe
+The quote request includes all open position symbols, regardless of the user's
+asset-type label. Finnhub determines whether it can return a quote; a symbol it
+does not return receives an explicit unavailable quote with a safe
 unsupported-symbol or not-found reason. The holding remains visible with its
 non-price facts; price-dependent value/allocation is excluded from totals, with
 the excluded-holding count stated. It is never silently dropped or fabricated.
@@ -208,7 +209,7 @@ token to confirm safe per-symbol unavailability and authentication rejection.
 
 - Remove `HARDCODED_USD_PRICE_BY_SYMBOL` only when the selected adapter and
   Edge Function are ready. Add a `useQuotes` TanStack Query keyed by sorted
-  visible symbols and account selection. Its stale time is shorter than the
+  open-position symbols and portfolio. Its stale time is shorter than the
   server cache TTL and it refetches only on a deliberate Refresh Prices action,
   a suitable visibility/refocus policy, or a controlled background interval;
   it must not poll on every component render.

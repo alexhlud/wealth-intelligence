@@ -70,9 +70,9 @@ export function HoldingsPage() {
   }, [accounts.data, selected, selectionStorageKey])
   const accountList = accounts.data ?? []
   const visible = (positions.data ?? []).filter((position) => selected?.has(position.account_id))
-  const eligible = visible.filter((position) => ['stock', 'etf'].includes(position.asset_type) && accountList.find((account) => account.id === position.account_id)?.currency_code === 'USD')
-  const symbols = [...new Set(eligible.map((position) => position.symbol))].sort()
-  const quotes = useQuotes(portfolio.data?.id, [...(selected ?? [])], symbols)
+  const eligible = visible.filter((position) => accountList.find((account) => account.id === position.account_id)?.currency_code === 'USD')
+  const symbols = [...new Set((positions.data ?? []).map((position) => position.symbol))].sort()
+  const quotes = useQuotes(portfolio.data?.id, symbols)
   if (portfolio.isError || accounts.isError || positions.isError) return <ErrorState onRetry={() => { void portfolio.refetch(); void accounts.refetch(); void positions.refetch() }} />
   if (portfolio.isPending || accounts.isPending || positions.isPending || selected === null) return <LoadingState>Loading your holdings…</LoadingState>
   if (!accountList.length) return <section className="page-header"><h1>Holdings, stated plainly.</h1><EmptyState>Add an account before you record its holdings.</EmptyState><a className="button button-primary" href="/accounts">Go to accounts</a></section>
@@ -84,7 +84,7 @@ export function HoldingsPage() {
   const staleQuotes = eligible.flatMap((position) => { const quote = quoteFor(position); return quote?.price !== null && quote?.price !== undefined && (quote.freshness === 'stale' || quotes.isError) && quote.lastSuccessfulAt ? [quote] : [] })
   const hasDelayed = eligible.some((position) => quoteFor(position)?.freshness === 'delayed')
   const positionCount = visible.length; const accountCount = selected.size; const countLabel = `${positionCount} open position${positionCount === 1 ? '' : 's'} / ${accountCount} selected account${accountCount === 1 ? '' : 's'}`
-  const providerFailed = quotes.isError || (quotes.data ?? []).some((quote) => quote.unavailableReason === 'provider_unavailable' || quote.unavailableReason === 'invalid_response')
+  const providerFailed = quotes.isError || eligible.some((position) => { const reason = quoteFor(position)?.unavailableReason; return reason === 'provider_unavailable' || reason === 'invalid_response' })
   return <section>
     <header className="page-header"><div><h1>Holdings, stated plainly.</h1><p>{portfolio.data?.name}</p></div><div className="holdings-header-actions"><p className="holdings-context">{countLabel}</p><Button className="button-primary" onClick={() => setEditing(null)}><Plus size={16} /> Add position</Button></div></header>
     <div className="holdings-summary"><div><p>Selected holdings value</p><strong>{visible.length && !values.length ? 'Unavailable' : formatUsd(total)}</strong>{unavailablePriceCount > 0 && <p className="incomplete-total-notice" role="status">{unavailablePriceCount} holding{unavailablePriceCount === 1 ? '' : 's'} excluded, price unavailable.</p>}{staleQuotes.length > 0 && <p className="incomplete-total-notice">Includes stale prices.</p>}{hasDelayed && <p className="incomplete-total-notice">Includes delayed prices.</p>}</div><Button className="button-secondary" disabled={!symbols.length || quotes.isFetching} onClick={() => { void quotes.refetch() }}>{quotes.isFetching ? 'Refreshing prices…' : 'Refresh Prices'}</Button><AccountSelection accounts={accountList} selected={selected} setSelected={persistSelected} /></div>
@@ -95,7 +95,7 @@ export function HoldingsPage() {
       const account = accountList.find(({ id }) => id === position.account_id)
       const quote = quoteFor(position)
       const value = quote?.price !== null && quote?.price !== undefined && quote.freshness !== 'unavailable' ? marketValue(position.quantity, quote.price) : null
-      const reason = !account?.currency_code ? 'Account currency unavailable.' : account.currency_code !== 'USD' ? 'Non-USD prices are not supported.' : !['stock', 'etf'].includes(position.asset_type) ? 'Only US stocks and ETFs are supported.' : quote?.unavailableReason === 'not_found' || quote?.unavailableReason === 'unsupported_symbol' ? 'No quote found. Check the ticker.' : quotes.isFetching && !quote ? 'Loading price…' : 'Price unavailable. Try again.'
+      const reason = !account?.currency_code ? 'Account currency unavailable.' : account.currency_code !== 'USD' ? 'Non-USD prices are not supported.' : quote?.unavailableReason === 'not_found' || quote?.unavailableReason === 'unsupported_symbol' ? 'No quote found. Check the ticker.' : quotes.isFetching && !quote ? 'Loading price…' : 'Price unavailable. Try again.'
       return <tr key={position.id}><td><strong>{position.security_name}</strong><small>{position.symbol} · {account?.name ?? 'Account unavailable'}</small></td><td>{position.quantity}</td><td>{formatUsd(position.average_cost)}</td><td>{value !== null && quote ? <>{formatUsd(quote.price!)}<small className={quote.freshness === 'stale' || quotes.isError ? 'quote-stale' : ''}>{quoteStatus(quote, quotes.isError)}</small></> : <>Unavailable<small>{reason}</small></>}</td><td>{value !== null && quote?.change !== null && quote?.change !== undefined ? formatChange(quote.change) : 'Unavailable'}</td><td>{value !== null ? formatUsd(value) : 'Unavailable'}</td><td>{value !== null ? percentageOf(value, total) ?? 'Unavailable' : 'Unavailable'}</td><td><Button className="button-text" onClick={() => setEditing(position)}>Edit</Button></td></tr>
     })}</tbody></table></div>
     {visible.length === 0 && <EmptyState>{selected.size ? 'No open positions belong to the selected accounts.' : 'Select at least one account to inspect its holdings.'}</EmptyState>}

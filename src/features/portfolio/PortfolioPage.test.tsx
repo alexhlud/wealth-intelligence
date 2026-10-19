@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AccountsPage, HoldingsPage } from './PortfolioPage'
 
@@ -74,6 +74,7 @@ describe('HoldingsPage account filters', () => {
     expect(screen.queryByText('Invesco QQQ')).toBeNull()
     expect(screen.getByText('Vanguard S&P 500')).toBeTruthy()
     await waitFor(() => expect(screen.getAllByText('$1,800.00')).toHaveLength(2))
+    expect(invoke).toHaveBeenCalledTimes(1)
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear all' }))
     expect(screen.getByText('Select at least one account to inspect its holdings.')).toBeTruthy()
@@ -98,7 +99,7 @@ describe('HoldingsPage account filters', () => {
   })
 
   it('discloses near the total when a selected holding has no available price', async () => {
-    responses.positions.push({ id: '66666666-6666-4666-8666-666666666666', account_id: accountA, symbol: 'BND', security_name: 'Vanguard Total Bond Market', asset_type: 'etf', status: 'open', quantity: '4', average_cost: '70' })
+    responses.positions.push({ id: '66666666-6666-4666-8666-666666666666', account_id: accountA, symbol: 'BND', security_name: 'Vanguard Total Bond Market', asset_type: 'other', status: 'open', quantity: '4', average_cost: '70' })
 
     renderHoldings()
 
@@ -109,6 +110,18 @@ describe('HoldingsPage account filters', () => {
     } finally {
       responses.positions.pop()
     }
+  })
+
+  it('requests and displays a quote for an open position categorized as other', async () => {
+    responses.positions[0]!.asset_type = 'other'
+    try {
+      renderHoldings()
+      expect(await screen.findByText('$2,800.00')).toBeTruthy()
+      expect(within(screen.getByText('Invesco QQQ').closest('tr')!).getByText('$500.00')).toBeTruthy()
+      expect(screen.getAllByText('Fresh')).toHaveLength(2)
+      expect(invoke).toHaveBeenCalledWith('market-data', { body: { operation: 'quotes', symbols: ['QQQ', 'VOO'] } })
+      expect(screen.queryByText('Only US stocks and ETFs are supported.')).toBeNull()
+    } finally { responses.positions[0]!.asset_type = 'etf' }
   })
 
   it('labels delayed and stale prices with their true timestamp and preserves holdings', async () => {
@@ -154,14 +167,14 @@ describe('HoldingsPage account filters', () => {
     expect(await screen.findByText('$2,800.00')).toBeTruthy()
   })
 
-  it('excludes non-USD accounts without requesting their symbols', async () => {
+  it('requests non-USD account symbols but excludes their values', async () => {
     responses.accounts[1]!.currency_code = 'EUR'
     try {
       renderHoldings()
       expect(await screen.findAllByText('$1,000.00')).toHaveLength(2)
       expect(screen.getByText('Non-USD prices are not supported.')).toBeTruthy()
       expect(screen.getByText('1 holding excluded, price unavailable.')).toBeTruthy()
-      expect(invoke).toHaveBeenCalledWith('market-data', { body: { operation: 'quotes', symbols: ['QQQ'] } })
+      expect(invoke).toHaveBeenCalledWith('market-data', { body: { operation: 'quotes', symbols: ['QQQ', 'VOO'] } })
     } finally { responses.accounts[1]!.currency_code = 'USD' }
   })
 
