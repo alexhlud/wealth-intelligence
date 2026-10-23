@@ -11,10 +11,23 @@ import { MfaCodeForm } from './MfaPages'
 
 const genericAuthError = 'We couldn’t complete that request. Please check your details and try again.'
 const resetNotice = 'If an account matches that email address, a recovery link is on its way.'
+const pendingRecoveryKey = 'wealth-intelligence.auth.recovery-pending'
+
+export function hasPendingRecovery() {
+  return window.sessionStorage.getItem(pendingRecoveryKey) === 'true'
+}
+
+function markPendingRecovery() {
+  window.sessionStorage.setItem(pendingRecoveryKey, 'true')
+}
+
+function clearPendingRecovery() {
+  window.sessionStorage.removeItem(pendingRecoveryKey)
+}
 
 export function AuthPage() {
   const session = useSession(); const [searchParams, setSearchParams] = useSearchParams(); const [mode, setMode] = useState<'sign-in' | 'sign-up' | 'reset'>(() => searchParams.get('mode') === 'reset' ? 'reset' : 'sign-in'); const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null); const [isSubmitting, setIsSubmitting] = useState(false); const [captchaToken, setCaptchaToken] = useState<string | null>(null); const [captchaReset, setCaptchaReset] = useState(0)
-  if (session && searchParams.get('signout') !== 'confirm') return <Navigate to="/holdings" replace />
+  if (session && searchParams.get('signout') !== 'confirm') return <Navigate to={hasPendingRecovery() ? '/auth/callback?flow=recovery' : '/'} replace />
   const resetCaptcha = () => { setCaptchaToken(null); setCaptchaReset((value) => value + 1) }
   const changeMode = (next: 'sign-in' | 'sign-up' | 'reset') => { setMode(next); setError(null); setNotice(null); resetCaptcha() }
   async function signOutEverywhere() { setIsSubmitting(true); await supabase.auth.signOut({ scope: 'global' }); setIsSubmitting(false); setSearchParams({}, { replace: true }) }
@@ -34,7 +47,7 @@ export function AuthPage() {
 }
 
 function EmailLinkCallback({ flow }: { flow: 'recovery' | 'signup' }) {
-  const navigate = useNavigate(); const [password, setPassword] = useState(''); const [error, setError] = useState<string | null>(null); const [isSubmitting, setIsSubmitting] = useState(false); const [status, setStatus] = useState<'checking' | 'mfa' | 'ready' | 'invalid' | 'security-error'>('checking'); const [factorId, setFactorId] = useState<string | null>(null); const [hashParams] = useState(() => new URLSearchParams(window.location.hash.slice(1)))
+  const navigate = useNavigate(); const [password, setPassword] = useState(''); const [error, setError] = useState<string | null>(null); const [isSubmitting, setIsSubmitting] = useState(false); const [status, setStatus] = useState<'checking' | 'mfa' | 'ready' | 'invalid' | 'security-error'>('checking'); const [factorId, setFactorId] = useState<string | null>(null); const [recoveryWasPending] = useState(() => hasPendingRecovery()); const [hashParams] = useState(() => { if (flow === 'recovery') markPendingRecovery(); return new URLSearchParams(window.location.hash.slice(1)) })
   async function assessRecoveryMfa() {
     const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
     if (assuranceError) { setStatus('security-error'); return }
@@ -48,11 +61,15 @@ function EmailLinkCallback({ flow }: { flow: 'recovery' | 'signup' }) {
   }
   useEffect(() => {
     const accessToken = hashParams.get('access_token'); const refreshToken = hashParams.get('refresh_token')
-    if (!accessToken || !refreshToken) { setStatus('invalid'); return }
+    if (!accessToken || !refreshToken) {
+      if (flow !== 'recovery' || !recoveryWasPending) { clearPendingRecovery(); setStatus('invalid'); return }
+      void supabase.auth.getSession().then(({ data }) => { if (data.session) void assessRecoveryMfa(); else { clearPendingRecovery(); setStatus('invalid') } })
+      return
+    }
     let active = true
     void supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ data, error: sessionError }) => {
       if (!active) return
-      if (sessionError || !data.session) setStatus('invalid')
+      if (sessionError || !data.session) { clearPendingRecovery(); setStatus('invalid') }
       else if (flow === 'recovery') void assessRecoveryMfa()
       else setStatus('ready')
       window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}`)
@@ -64,18 +81,20 @@ function EmailLinkCallback({ flow }: { flow: 'recovery' | 'signup' }) {
   if (status === 'invalid') return <main className="auth-shell"><section className="auth-panel"><h1>Check your email</h1><p className="auth-intro">Complete the link in your email, then return here to sign in.</p></section></main>
   if (status === 'security-error') return <main className="auth-shell"><section className="auth-panel"><h1>Security check unavailable</h1><p className="auth-intro" role="alert">We couldn’t complete that security action. Please try again.</p><button className="button button-secondary" type="button" onClick={() => window.location.reload()}>Try again</button></section></main>
   if (status === 'mfa' && factorId) return <main className="auth-shell"><section className="auth-panel" aria-labelledby="recovery-mfa-title"><div className="brand-mark" aria-hidden="true"><KeyRound size={22} /></div><h1 id="recovery-mfa-title">Confirm it’s you</h1><p className="auth-intro">An authenticator code is required because this account has multi-factor authentication enabled. Enter a code to continue resetting your password.</p><MfaCodeForm factorId={factorId} submitLabel="Verify and set password" onVerified={assessRecoveryMfa} /><p className="security-note">If you lose both your password and all authenticator factors, this account cannot be recovered.</p></section></main>
-  if (flow === 'signup') return <Navigate to="/holdings" replace />
-  async function savePassword(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const parsed = invitationPasswordInputSchema.safeParse({ password }); if (!parsed.success) { setError(validationErrorMessage('invitationPassword', parsed.error)); return }; setIsSubmitting(true); const { error: updateError } = await supabase.auth.updateUser(parsed.data); setIsSubmitting(false); if (updateError) { setError('We couldn’t set your password. Please try again.'); return }; navigate('/holdings', { replace: true }) }
+  if (flow === 'signup') return <Navigate to="/" replace />
+  async function savePassword(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const parsed = invitationPasswordInputSchema.safeParse({ password }); if (!parsed.success) { setError(validationErrorMessage('invitationPassword', parsed.error)); return }; setIsSubmitting(true); const { error: updateError } = await supabase.auth.updateUser(parsed.data); setIsSubmitting(false); if (updateError) { setError('We couldn’t set your password. Please try again.'); return }; clearPendingRecovery(); navigate('/', { replace: true }) }
   return <main className="auth-shell"><section className="auth-panel" aria-labelledby="set-password-title"><h1 id="set-password-title">Set a new password</h1><p className="auth-intro">Choose a new password to finish recovering your private workspace.</p><form className="auth-form" onSubmit={savePassword} noValidate><label htmlFor="new-password">New password</label><input id="new-password" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />{error && <p className="form-message error" role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving…' : 'Continue to portfolio'}</button></form></section></main>
 }
 
 export function AuthCallbackPage() {
   const session = useSession(); const navigate = useNavigate(); const [searchParams] = useSearchParams(); const [password, setPassword] = useState(''); const [error, setError] = useState<string | null>(null); const [isSubmitting, setIsSubmitting] = useState(false); const callbackType = searchParams.get('flow') ?? new URLSearchParams(window.location.hash.slice(1)).get('type')
-  if (callbackType === 'recovery' || callbackType === 'signup') return <EmailLinkCallback flow={callbackType} />
+  if (callbackType === 'recovery' || (hasPendingRecovery() && session)) return <EmailLinkCallback flow="recovery" />
+  if (callbackType === 'signup') return <EmailLinkCallback flow="signup" />
   if (session && callbackType !== 'recovery' && callbackType !== 'invite') return <main className="auth-shell"><section className="auth-panel"><h1>Check your email</h1><p className="auth-intro">Complete the link in your email, then return here to sign in.</p></section></main>
   if (session === undefined) return <main className="auth-shell"><p className="status-copy">Confirming your secure session…</p></main>
   if (session) { async function savePassword(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const parsed = invitationPasswordInputSchema.safeParse({ password }); if (!parsed.success) { setError(validationErrorMessage('invitationPassword', parsed.error)); return }; setIsSubmitting(true); const { error: updateError } = await supabase.auth.updateUser(parsed.data); setIsSubmitting(false); if (updateError) { setError('We couldn’t set your password. Please try again.'); return }; navigate('/holdings', { replace: true }) }; return <main className="auth-shell"><section className="auth-panel" aria-labelledby="set-password-title"><h1 id="set-password-title">Set a new password</h1><p className="auth-intro">Choose a new password to finish recovering your private workspace.</p><form className="auth-form" onSubmit={savePassword} noValidate><label htmlFor="new-password">New password</label><input id="new-password" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />{error && <p className="form-message error" role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving…' : 'Continue to portfolio'}</button></form></section></main> }
   return <main className="auth-shell"><section className="auth-panel"><h1>Check your email</h1><p className="auth-intro">Complete the link in your email, then return here to sign in.</p></section></main>
 }
 export function ProtectedRoute() { const session = useSession(); if (session === undefined) return <main className="auth-shell"><p className="status-copy">Loading your secure workspace…</p></main>; return session ? <Outlet /> : <Navigate to="/auth" replace /> }
+export function RecoveryRouteGuard() { const session = useSession(); return session && hasPendingRecovery() ? <Navigate to="/auth/callback?flow=recovery" replace /> : <Outlet /> }
 export function SignOutButton() { const navigate = useNavigate(); const queryClient = useQueryClient(); async function signOut() { await supabase.auth.signOut(); queryClient.clear(); navigate('/auth', { replace: true }) }; return <button className="text-button" type="button" onClick={() => void signOut()}>Sign out</button> }

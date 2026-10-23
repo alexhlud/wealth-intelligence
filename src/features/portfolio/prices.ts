@@ -45,3 +45,10 @@ export function percentageOf(value: string, total: string): string | null {
   const hundredths = (asInteger(value) * 10000n) / denominator
   return `${hundredths / 100n}.${(hundredths % 100n).toString().padStart(2, '0')}%`
 }
+
+export function subtractDecimals(left: string, right: string): string {
+  const scale = Math.max(left.split('.')[1]?.length ?? 0, right.split('.')[1]?.length ?? 0)
+  const integer = (value: string) => { const negative = value.startsWith('-'); const [whole, fraction = ''] = (negative ? value.slice(1) : value).split('.'); const result = BigInt(`${whole}${fraction.padEnd(scale, '0')}`); return negative ? -result : result }
+  const value = integer(left) - integer(right); const negative = value < 0n; const digits = (negative ? -value : value).toString().padStart(scale + 1, '0'); const whole = scale ? digits.slice(0, -scale) || '0' : digits; const fraction = scale ? digits.slice(-scale).replace(/0+$/, '') : ''
+  return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`
+}

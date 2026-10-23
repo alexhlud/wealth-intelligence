@@ -135,7 +135,7 @@ export function MfaChallengePage() {
     <div className="brand-mark" aria-hidden="true"><KeyRound size={22} /></div>
     <h1 id="mfa-challenge-title">Confirm it’s you</h1>
     <p className="auth-intro">Enter a code from one of your authenticator apps to open your private workspace.</p>
-    <MfaCodeForm factorId={factors[0]!.id} submitLabel="Verify and continue" onVerified={async () => { navigate('/holdings', { replace: true }) }} />
+    <MfaCodeForm factorId={factors[0]!.id} submitLabel="Verify and continue" onVerified={async () => { navigate('/', { replace: true }) }} />
     <button className="button-text" type="button" onClick={() => void exitChallenge()} disabled={isExiting}>{isExiting ? 'Signing out…' : 'Return to sign in'}</button>
   </section></main>
 }

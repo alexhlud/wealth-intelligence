@@ -111,3 +111,11 @@ its few-per-hour rate limit no longer apply. Registration is open.
 **Domain.** motionofwealth.com registered at Cloudflare. Not yet
 pointed at the app; the site still serves from the pages.dev
 subdomain.
+
+## Design pass timing
+
+No full design pass until every screen exists, after Phase 9. Polishing
+a screen that is about to gain a chart, a milestone tracker, or a
+projection preview means designing it twice. Fix anything broken or
+confusing as it comes up, but save the visual pass for when the whole
+system can be judged at once.
