@@ -13,6 +13,37 @@ function json(request: Request, body: unknown, status = 200) {
   return Response.json(body, { status, headers: corsHeaders(request, allowedOrigins) })
 }
 
+function tokenAssuranceLevel(token: string): 'aal1' | 'aal2' | 'unknown' {
+  try {
+    const payload = token.split('.')[1]
+    if (!payload) return 'unknown'
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
+    const { aal } = JSON.parse(json) as { aal?: unknown }
+    return aal === 'aal1' || aal === 'aal2' ? aal : 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+function snapshotFailure(error: unknown, operation: 'preview' | 'save', assuranceLevel?: 'aal1' | 'aal2' | 'unknown') {
+  const record = error && typeof error === 'object' ? error as Record<string, unknown> : {}
+  const message = typeof record.message === 'string' ? record.message : String(error)
+  const code = typeof record.code === 'string' ? record.code : undefined
+  // Error messages can come from provider/database layers. Preserve their
+  // diagnostic shape without allowing values or credentials into logs.
+  const safeMessage = message
+    .replace(/(token|key|authorization)=\S+/gi, '$1=[redacted]')
+    .replace(/-?\d+(?:\.\d+)?/g, '[redacted-number]')
+    .slice(0, 240)
+  const errorClass = error instanceof Error ? error.name : error === null ? 'null' : typeof error
+  console.error('Snapshot capture failure', { operation, errorClass, message: safeMessage, code, assuranceLevel })
+  return { code, message }
+}
+
+function isMfaRequired(error: { code?: string; message: string }) {
+  return error.code === '42501' && error.message === 'MFA verification required'
+}
+
 function newYorkTradingDay(value = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
@@ -37,6 +68,7 @@ Deno.serve(async (request) => {
   const authClient = createClient(projectUrl, publishableKey, { global: { headers: { Authorization: `Bearer ${token}` } } })
   const { data: { user }, error: authError } = await authClient.auth.getUser(token)
   if (authError || !user) return json(request, { error: 'Authentication required.' }, 401)
+  const assuranceLevel = tokenAssuranceLevel(token)
 
   const body = marketDataRequestSchema.safeParse(await request.json().catch(() => null))
   if (!body.success) return json(request, { error: 'Request could not be processed.' }, 400)
@@ -57,8 +89,8 @@ Deno.serve(async (request) => {
   if (body.data.operation === 'snapshot_preview') {
     try {
       return json(request, { snapshot: await previewSnapshot(admin, user.id, body.data.portfolioId, finnhubApiKey) })
-    } catch {
-      console.error('Snapshot capture failure', { operation: 'preview' })
+    } catch (error) {
+      snapshotFailure(error, 'preview', assuranceLevel)
       return json(request, { error: 'Service is unavailable.' }, 503)
     }
   }
@@ -66,8 +98,9 @@ Deno.serve(async (request) => {
     const userClient = createClient(projectUrl, publishableKey, { db: { schema: 'app' }, global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false, autoRefreshToken: false } })
     try {
       return json(request, { snapshot: await saveSnapshot(admin, userClient, user.id, body.data.portfolioId, body.data.requestId, finnhubApiKey) })
-    } catch {
-      console.error('Snapshot capture failure', { operation: 'save' })
+    } catch (error) {
+      const failure = snapshotFailure(error, 'save', assuranceLevel)
+      if (isMfaRequired(failure)) return json(request, { error: 'Snapshot save requires verification.', reason: 'mfa_required' }, 403)
       return json(request, { error: 'Service is unavailable.' }, 503)
     }
   }

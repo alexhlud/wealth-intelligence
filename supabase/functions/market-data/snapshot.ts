@@ -56,7 +56,7 @@ export async function saveSnapshot(admin: SupabaseClient, userClient: SupabaseCl
   const { data, error } = await userClient.rpc('create_portfolio_snapshot', { p_portfolio_id: portfolioId, p_as_of_date: built.result.session.asOfDate, p_market_close_at: built.result.session.marketCloseAt, p_source: 'manual', p_positions: built.payload.positions, p_manual_assets: built.payload.manualAssets, p_liabilities: built.payload.liabilities, p_request_id: requestId })
   if (error) {
     if (error.code === '22000') return { kind: 'already_recorded', snapshotId: '' } as const
-    throw new Error('Snapshot save unavailable')
+    throw error
   }
   return { kind: 'saved' as const, snapshotId: String(data), session: built.result.session }
 }
