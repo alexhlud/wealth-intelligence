@@ -12,6 +12,7 @@ import { useQuotes } from '@/features/market-data/useQuotes'
 import type { Quote } from '@/features/market-data/contracts'
 import { reconcileAccountSelection } from './accountSelection'
 import { PositionDialog } from './PositionDialog'
+import { SaveSnapshotDialog } from '@/features/snapshots/SnapshotsPage'
 
 async function getPortfolio(): Promise<PortfolioResponse> { const { data, error } = await supabase.rpc('ensure_primary_portfolio'); if (error) throw error; const portfolio = portfolioResponseSchema.parse([data])[0]; if (!portfolio) throw new Error('Portfolio unavailable'); return portfolio }
 async function getAccounts(id: string): Promise<AccountResponse[]> { const { data, error } = await supabase.from('accounts').select('id, portfolio_id, name, institution_name, account_type, include_in_net_worth, currency_code').eq('portfolio_id', id).order('created_at'); if (error) throw error; return accountResponseSchema.parse(data) }
@@ -53,7 +54,7 @@ function formatChange(change: string) {
 }
 
 export function HoldingsPage() {
-  const { portfolio, accounts, positions } = usePortfolioData(); const [selected, setSelected] = useState<Set<string> | null>(null); const [editing, setEditing] = useState<OpenPositionResponse | null | undefined>(undefined)
+  const { portfolio, accounts, positions } = usePortfolioData(); const [selected, setSelected] = useState<Set<string> | null>(null); const [editing, setEditing] = useState<OpenPositionResponse | null | undefined>(undefined); const [savingSnapshot, setSavingSnapshot] = useState(false)
   const selectionStorageKey = portfolio.data ? `holding-account-selection:${portfolio.data.id}` : null
   const persistSelected = (next: Set<string>) => { if (selectionStorageKey) sessionStorage.setItem(selectionStorageKey, JSON.stringify([...next])); setSelected(next) }
   useEffect(() => {
@@ -86,7 +87,7 @@ export function HoldingsPage() {
   const positionCount = visible.length; const accountCount = selected.size; const countLabel = `${positionCount} open position${positionCount === 1 ? '' : 's'} / ${accountCount} selected account${accountCount === 1 ? '' : 's'}`
   const providerFailed = quotes.isError || eligible.some((position) => { const reason = quoteFor(position)?.unavailableReason; return reason === 'provider_unavailable' || reason === 'invalid_response' })
   return <section>
-    <header className="page-header"><div><h1>Holdings, stated plainly.</h1><p>{portfolio.data?.name}</p></div><div className="holdings-header-actions"><p className="holdings-context">{countLabel}</p><Button className="button-primary" onClick={() => setEditing(null)}><Plus size={16} /> Add position</Button></div></header>
+    <header className="page-header"><div><h1>Holdings, stated plainly.</h1><p>{portfolio.data?.name}</p></div><div className="holdings-header-actions"><p className="holdings-context">{countLabel}</p><Button className="button-secondary" onClick={() => setSavingSnapshot(true)}>Save snapshot</Button><Button className="button-primary" onClick={() => setEditing(null)}><Plus size={16} /> Add position</Button></div></header>
     <div className="holdings-summary"><div><p>Selected holdings value</p><strong>{visible.length && !values.length ? 'Unavailable' : formatUsd(total)}</strong>{unavailablePriceCount > 0 && <p className="incomplete-total-notice" role="status">{unavailablePriceCount} holding{unavailablePriceCount === 1 ? '' : 's'} excluded, price unavailable.</p>}{staleQuotes.length > 0 && <p className="incomplete-total-notice">Includes stale prices.</p>}{hasDelayed && <p className="incomplete-total-notice">Includes delayed prices.</p>}</div><Button className="button-secondary" disabled={!symbols.length || quotes.isFetching} onClick={() => { void quotes.refetch() }}>{quotes.isFetching ? 'Refreshing prices…' : 'Refresh Prices'}</Button><AccountSelection accounts={accountList} selected={selected} setSelected={persistSelected} /></div>
     {staleQuotes.length > 0 && <div className="quote-warning" role="status"><strong>! Stale prices</strong>{staleQuotes.map((quote, index) => <p key={`${quote.symbol}-${index}`}>{quote.symbol}: {quoteStatus(quote, quotes.isError)}</p>)}</div>}
     {providerFailed && <p className="quote-warning" role="status">Prices could not be refreshed. Please try again. Last-known prices are retained when available.</p>}
@@ -99,7 +100,7 @@ export function HoldingsPage() {
       return <tr key={position.id}><td><strong>{position.security_name}</strong><small>{position.symbol} · {account?.name ?? 'Account unavailable'}</small></td><td>{position.quantity}</td><td>{formatUsd(position.average_cost)}</td><td>{value !== null && quote ? <>{formatUsd(quote.price!)}<small className={quote.freshness === 'stale' || quotes.isError ? 'quote-stale' : ''}>{quoteStatus(quote, quotes.isError)}</small></> : <>Unavailable<small>{reason}</small></>}</td><td>{value !== null && quote?.change !== null && quote?.change !== undefined ? formatChange(quote.change) : 'Unavailable'}</td><td>{value !== null ? formatUsd(value) : 'Unavailable'}</td><td>{value !== null ? percentageOf(value, total) ?? 'Unavailable' : 'Unavailable'}</td><td><Button className="button-text" onClick={() => setEditing(position)}>Edit</Button></td></tr>
     })}</tbody></table></div>
     {visible.length === 0 && <EmptyState>{selected.size ? 'No open positions belong to the selected accounts.' : 'Select at least one account to inspect its holdings.'}</EmptyState>}
-    <p className="temporary-price">Market data provided by Finnhub.</p>{editing !== undefined && portfolio.data && <PositionDialog portfolioId={portfolio.data.id} accounts={accountList} position={editing ?? undefined} onClose={() => setEditing(undefined)} />}
+    <p className="temporary-price">Market data provided by Finnhub.</p>{editing !== undefined && portfolio.data && <PositionDialog portfolioId={portfolio.data.id} accounts={accountList} position={editing ?? undefined} onClose={() => setEditing(undefined)} />}{savingSnapshot && portfolio.data && <SaveSnapshotDialog portfolioId={portfolio.data.id} onClose={() => setSavingSnapshot(false)} />}
   </section>
 }
 

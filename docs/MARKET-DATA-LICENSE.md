@@ -54,3 +54,29 @@ be contacted again before continuing.
   weekend quotes; it does not implement a global 60-call limiter, atomic
   rate increments, per-symbol refresh locks, or an exchange holiday calendar.
   These are material limits on the intended daily refresh and quota protection.
+
+## Historical-close verification — 2026-10-24
+
+The manual verification script queried Finnhub's `stock/candle` endpoint for
+NVDA's pre-split June 7, 2024 daily close. The approved key returned HTTP 403;
+the same script returned HTTP 401 with an intentionally bad key. This verifies
+that the key is valid but historical candles are unavailable on the project's
+free tier. No historical close was stored or classified as raw.
+
+Alpha Vantage was also considered and declined use for this project. There is
+therefore no provider of historical closes in V1. Snapshots of the latest
+completed session use a fresh Finnhub current quote obtained after that session
+has closed, during the bounded before-next-open capture window. Historical
+backfill requires user-supplied prices, explicitly labelled `manual` or
+`estimate`; it makes no provider-price request.
+
+Snapshot positions record these values as `current_quote_close`: a Finnhub
+current quote captured after the named XNYS session close, with its distinct
+quote-fetch timestamp. It is not `raw_close`, which means an
+exchange/provider-supplied unadjusted official close for that session. The
+values often agree, but the application preserves their different provenance.
+Nothing writes `raw_close` in V1.
+
+The provider abstraction keeps a historical-close result unavailable by default
+so a future approved source can be added behind that contract. It must identify
+an unadjusted/raw close before any snapshot path may label its value `raw_close`.

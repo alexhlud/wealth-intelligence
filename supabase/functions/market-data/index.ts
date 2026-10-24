@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.112.4'
-import { fetchFinnhubQuote, quoteRequestSchema, shouldUseCachedQuote } from './finnhub.ts'
+import { fetchFinnhubQuote, marketDataRequestSchema, shouldUseCachedQuote } from './finnhub.ts'
 import { corsHeaders, corsPreflight, parseAllowedOrigins } from './cors.ts'
+import { previewSnapshot, saveSnapshot } from './snapshot.ts'
 
 const projectUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const publishableKey = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY') ?? ''
@@ -37,7 +38,7 @@ Deno.serve(async (request) => {
   const { data: { user }, error: authError } = await authClient.auth.getUser(token)
   if (authError || !user) return json(request, { error: 'Authentication required.' }, 401)
 
-  const body = quoteRequestSchema.safeParse(await request.json().catch(() => null))
+  const body = marketDataRequestSchema.safeParse(await request.json().catch(() => null))
   if (!body.success) return json(request, { error: 'Request could not be processed.' }, 400)
   const admin = createClient(projectUrl, serviceRoleKey, { db: { schema: 'app' }, auth: { persistSession: false, autoRefreshToken: false } })
   const windowStartedAt = new Date(Math.floor(Date.now() / 60_000) * 60_000).toISOString()
@@ -51,6 +52,24 @@ Deno.serve(async (request) => {
   if (rateWriteError) {
     console.error('Market data storage failure', { operation: 'write_rate_limit', code: rateWriteError.code })
     return json(request, { error: 'Service is unavailable.' }, 503)
+  }
+
+  if (body.data.operation === 'snapshot_preview') {
+    try {
+      return json(request, { snapshot: await previewSnapshot(admin, user.id, body.data.portfolioId, finnhubApiKey) })
+    } catch {
+      console.error('Snapshot capture failure', { operation: 'preview' })
+      return json(request, { error: 'Service is unavailable.' }, 503)
+    }
+  }
+  if (body.data.operation === 'save_snapshot') {
+    const userClient = createClient(projectUrl, publishableKey, { db: { schema: 'app' }, global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false, autoRefreshToken: false } })
+    try {
+      return json(request, { snapshot: await saveSnapshot(admin, userClient, user.id, body.data.portfolioId, body.data.requestId, finnhubApiKey) })
+    } catch {
+      console.error('Snapshot capture failure', { operation: 'save' })
+      return json(request, { error: 'Service is unavailable.' }, 503)
+    }
   }
 
   const now = new Date().toISOString()

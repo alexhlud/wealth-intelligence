@@ -47,6 +47,13 @@ Wire Phase 2b to real behavior. Decide and implement when snapshots are
 created. Add historical snapshot backfill so users can enter portfolio
 history predating the app.
 
+**XNYS calendar maintenance.** Phase 6 uses a committed NYSE annual table for
+2026--2027 rather than a runtime calendar service. Before its explicit
+2027-12-31 coverage end, review NYSE's next annual calendar, add the next
+year's holidays and early closes with the NYSE source citation, update the
+coverage end, and run the calendar tests. Past the coverage end capture fails
+closed as a non-session.
+
 ### Phase 7 — Portfolio Time Machine
 Flagship feature. Select a historical date, see exact holdings as
 recorded. Timeline, scrubber, chart tooltips. Then-vs-Now comparison.

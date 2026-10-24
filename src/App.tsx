@@ -7,6 +7,7 @@ import { AppErrorBoundary } from '@/components/AppErrorBoundary'
 import { AppShell } from '@/components/AppShell'
 import { ValueItemsPage } from '@/features/assets/ValueItemsPage'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
+import { SnapshotsPage } from '@/features/snapshots/SnapshotsPage'
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
                   <Route path="/accounts" element={<AccountsPage />} />
                   <Route path="/assets" element={<ValueItemsPage kind="asset" />} />
                   <Route path="/liabilities" element={<ValueItemsPage kind="liability" />} />
+                  <Route path="/snapshots" element={<SnapshotsPage />} />
                   <Route path="/security" element={<SecurityPage />} />
                   <Route path="/portfolio" element={<Navigate to="/holdings" replace />} />
                 </Route>

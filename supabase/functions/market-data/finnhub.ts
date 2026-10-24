@@ -5,6 +5,23 @@ export const quoteRequestSchema = z.object({
   symbols: z.array(z.string().trim().toUpperCase().regex(/^[A-Z][A-Z0-9.-]{0,9}$/)).min(1).max(25),
 }).strict().transform(({ operation, symbols }) => ({ operation, symbols: [...new Set(symbols)] }))
 
+export const snapshotPreviewRequestSchema = z.object({
+  operation: z.literal('snapshot_preview'),
+  portfolioId: z.string().uuid(),
+}).strict()
+
+export const saveSnapshotRequestSchema = z.object({
+  operation: z.literal('save_snapshot'),
+  portfolioId: z.string().uuid(),
+  requestId: z.string().uuid(),
+}).strict()
+
+export const marketDataRequestSchema = z.union([
+  quoteRequestSchema,
+  snapshotPreviewRequestSchema,
+  saveSnapshotRequestSchema,
+])
+
 const quoteSchema = z.object({
   c: z.number().finite().nonnegative(),
   pc: z.number().finite().nonnegative(),
