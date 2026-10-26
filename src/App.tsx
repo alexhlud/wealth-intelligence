@@ -6,7 +6,7 @@ import { AccountsPage, HoldingsPage } from '@/features/portfolio/PortfolioPage'
 import { AppErrorBoundary } from '@/components/AppErrorBoundary'
 import { AppShell } from '@/components/AppShell'
 import { ValueItemsPage } from '@/features/assets/ValueItemsPage'
-import { DashboardPageV2 as DashboardPage } from '@/features/dashboard/DashboardPageV2'
+import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { SnapshotsPage } from '@/features/snapshots/SnapshotsPage'
 
 export default function App() {
