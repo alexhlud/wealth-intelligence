@@ -16,10 +16,17 @@ export const saveSnapshotRequestSchema = z.object({
   requestId: z.string().uuid(),
 }).strict()
 
+/** Resolves an XNYS session only; it deliberately never requests a historical quote. */
+export const historicalSessionRequestSchema = z.object({
+  operation: z.literal('historical_session'),
+  asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+}).strict()
+
 export const marketDataRequestSchema = z.union([
   quoteRequestSchema,
   snapshotPreviewRequestSchema,
   saveSnapshotRequestSchema,
+  historicalSessionRequestSchema,
 ])
 
 const quoteSchema = z.object({

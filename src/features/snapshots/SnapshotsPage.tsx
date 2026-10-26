@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/Button'
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States'
 import { supabase } from '@/lib/supabase'
 import { formatUsd } from '@/features/portfolio/prices'
+import { HistoricalBackfill } from './HistoricalBackfill'
+import { CorrectionEditor } from './CorrectionEditor'
 
 const snapshotSchema = z.object({ id: z.string().uuid(), corrects_snapshot_id: z.string().uuid().nullable(), as_of_date: z.string(), market_close_at: z.string().datetime({ offset: true }), source: z.string(), investment_value: z.union([z.string(), z.number()]).transform(String), total_net_worth: z.union([z.string(), z.number()]).transform(String), created_at: z.string().datetime({ offset: true }) })
 const previewSchema = z.object({ kind: z.enum(['ready', 'already_recorded', 'unavailable', 'saved']), session: z.object({ asOfDate: z.string(), marketCloseAt: z.string().datetime({ offset: true }), closeTimeEt: z.enum(['13:00', '16:00']) }).optional(), positionCount: z.number().optional(), manualAssetCount: z.number().optional(), liabilityCount: z.number().optional(), snapshotId: z.string().optional(), reason: z.enum(['no_session', 'outside_capture_window', 'state_changed_after_close', 'price_unavailable', 'no_eligible_facts']).optional() })
@@ -43,10 +45,12 @@ export function SaveSnapshotDialog({ portfolioId, onClose }: { portfolioId: stri
 }
 
 export function SnapshotsPage() {
-  const portfolio = useQuery({ queryKey: ['primary-portfolio'], queryFn: getPortfolio })
+  const portfolio = useQuery({ queryKey: ['primary-portfolio'], queryFn: getPortfolio }); const [backfill, setBackfill] = useState(false); const [correcting, setCorrecting] = useState<Snapshot | null>(null)
   const snapshots = useQuery({ queryKey: ['snapshots', portfolio.data?.id], queryFn: () => getSnapshots(portfolio.data!.id), enabled: Boolean(portfolio.data) })
   if (portfolio.isPending || snapshots.isPending) return <LoadingState>Loading recorded snapshots…</LoadingState>
   if (portfolio.isError || snapshots.isError) return <ErrorState onRetry={() => { void portfolio.refetch(); void snapshots.refetch() }} />
   const rows: Snapshot[] = snapshots.data ?? []
-  return <section><header className="page-header"><div><h1>Snapshots, as recorded.</h1><p>Immutable portfolio facts captured at an XNYS session boundary.</p></div></header>{rows.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Session</th><th>Source</th><th>Investments</th><th>Net worth</th><th>Captured</th></tr></thead><tbody>{rows.map((snapshot) => <tr key={snapshot.id}><td>{sessionLabel(snapshot)}</td><td>{snapshot.source}</td><td>{formatUsd(snapshot.investment_value)}</td><td>{formatUsd(snapshot.total_net_worth)}</td><td>Captured from current quote after close · {new Date(snapshot.created_at).toISOString()}</td></tr>)}</tbody></table></div> : <EmptyState>No snapshots are recorded yet. Save the latest completed XNYS session from Holdings.</EmptyState>}</section>
+  if (backfill) return <HistoricalBackfill portfolioId={portfolio.data!.id} onClose={() => setBackfill(false)} />
+  if (correcting) return <CorrectionEditor snapshotId={correcting.id} portfolioId={portfolio.data!.id} onClose={() => setCorrecting(null)} />
+  return <section><header className="page-header"><div><h1>Snapshots, as recorded.</h1><p>Immutable portfolio facts captured at an XNYS session boundary.</p></div><Button className="button-primary" onClick={() => setBackfill(true)}>Add historical snapshot</Button></header>{rows.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Session</th><th>Source</th><th>Investments</th><th>Net worth</th><th>Recorded / action</th></tr></thead><tbody>{rows.map((snapshot) => <tr key={snapshot.id}><td>{sessionLabel(snapshot)}</td><td>{snapshot.source === 'backfill' ? 'User-supplied · manual or estimate' : snapshot.source}</td><td>{formatUsd(snapshot.investment_value)}</td><td>{formatUsd(snapshot.total_net_worth)}</td><td>{snapshot.source === 'backfill' ? 'Manually supplied / estimated' : `Captured · ${new Date(snapshot.created_at).toISOString()}`}<Button className="button-text" onClick={() => setCorrecting(snapshot)}>Correct</Button></td></tr>)}</tbody></table></div> : <EmptyState>No snapshots are recorded yet. Add history you have verified, or save the latest completed XNYS session from Holdings.</EmptyState>}</section>
 }
