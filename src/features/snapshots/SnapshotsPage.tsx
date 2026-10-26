@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/Button'
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/States'
 import { supabase } from '@/lib/supabase'
 import { formatUsd } from '@/features/portfolio/prices'
-import { HistoricalBackfillV2 as HistoricalBackfill } from './HistoricalBackfillV2'
-import { CorrectionEditorV2 as CorrectionEditor } from './CorrectionEditorV2'
+import { HistoricalBackfill } from './HistoricalBackfill'
+import { CorrectionEditor } from './CorrectionEditor'
 
 const snapshotSchema = z.object({ id: z.string().uuid(), corrects_snapshot_id: z.string().uuid().nullable(), as_of_date: z.string(), market_close_at: z.string().datetime({ offset: true }), source: z.string(), investment_value: z.union([z.string(), z.number()]).transform(String), total_net_worth: z.union([z.string(), z.number()]).transform(String), created_at: z.string().datetime({ offset: true }) })
 const previewSchema = z.object({ kind: z.enum(['ready', 'already_recorded', 'unavailable', 'saved']), session: z.object({ asOfDate: z.string(), marketCloseAt: z.string().datetime({ offset: true }), closeTimeEt: z.enum(['13:00', '16:00']) }).optional(), positionCount: z.number().optional(), manualAssetCount: z.number().optional(), liabilityCount: z.number().optional(), snapshotId: z.string().optional(), reason: z.enum(['no_session', 'outside_capture_window', 'state_changed_after_close', 'price_unavailable', 'no_eligible_facts']).optional() })
