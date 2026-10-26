@@ -29,6 +29,10 @@ npm run lint
 - No secrets in VITE_* vars, client code, or committed files.
 - Timestamps stored UTC.
 - History is immutable. Never rewrite a snapshot or position event.
+- A client error handler must not map distinct server failures to one specific
+  message. When the cause cannot safely be shown, use a generic but true message.
+- A server catch block must log error class, code, and message for diagnosis,
+  while returning only a safe response to the browser.
 
 ## Working agreement
 
