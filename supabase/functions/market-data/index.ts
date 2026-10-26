@@ -2,6 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2.112.4'
 import { fetchFinnhubQuote, marketDataRequestSchema, shouldUseCachedQuote } from './finnhub.ts'
 import { corsHeaders, corsPreflight, parseAllowedOrigins } from './cors.ts'
 import { previewSnapshot, saveSnapshot } from './snapshot.ts'
+import { getXnysSession } from './xnys-calendar.ts'
 
 const projectUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const publishableKey = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY') ?? ''
@@ -103,6 +104,10 @@ Deno.serve(async (request) => {
       if (isMfaRequired(failure)) return json(request, { error: 'Snapshot save requires verification.', reason: 'mfa_required' }, 403)
       return json(request, { error: 'Service is unavailable.' }, 503)
     }
+  }
+  if (body.data.operation === 'historical_session') {
+    const session = getXnysSession(body.data.asOfDate)
+    return json(request, { session })
   }
 
   const now = new Date().toISOString()
