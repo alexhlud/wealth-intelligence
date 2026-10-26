@@ -163,6 +163,30 @@ select ok((select account_label = 'Snapshot Brokerage'
 select lives_ok($$
   select app.create_portfolio_snapshot(
     (select id from snapshot_test_ids where name = 'owner_portfolio'),
+    '2026-09-04', '2026-09-04 20:00+00', 'manual',
+    (select pg_catalog.jsonb_agg(
+      pg_catalog.jsonb_set(
+        pg_catalog.jsonb_set(e.value, '{price_at}', '"2026-09-04T20:00:00Z"'::jsonb),
+        '{price_kind}', '"current_quote_close"'::jsonb
+      ) order by e.ord
+    ) from pg_catalog.jsonb_array_elements(
+      (select payload from snapshot_payloads where name = 'base_positions')
+    ) with ordinality as e(value, ord)),
+    (select payload from snapshot_payloads where name = 'base_assets'),
+    (select payload from snapshot_payloads where name = 'base_liabilities'),
+    'cccccccc-1000-0000-0000-000000000010')
+$$, 'A realistic current-quote-close payload creates a snapshot through the public RPC');
+select ok(not exists (
+  select 1 from app.snapshot_positions
+  where snapshot_id = (select id from app.portfolio_snapshots
+                       where request_id = 'cccccccc-1000-0000-0000-000000000010')
+    and price_kind <> 'current_quote_close'
+),
+  'Current-quote-close evidence is persisted by the snapshot RPC');
+
+select lives_ok($$
+  select app.create_portfolio_snapshot(
+    (select id from snapshot_test_ids where name = 'owner_portfolio'),
     '2026-08-31', '2026-08-31 20:00+00', 'manual',
     (select pg_catalog.jsonb_agg(value order by ord desc)
      from pg_catalog.jsonb_array_elements(
