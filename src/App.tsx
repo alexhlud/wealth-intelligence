@@ -6,7 +6,7 @@ import { AccountsPage, HoldingsPage } from '@/features/portfolio/PortfolioPage'
 import { AppErrorBoundary } from '@/components/AppErrorBoundary'
 import { AppShell } from '@/components/AppShell'
 import { ValueItemsPage } from '@/features/assets/ValueItemsPage'
-import { DashboardPage } from '@/features/dashboard/DashboardPage'
+import { DashboardWithHistoryPage } from '@/features/history/DashboardWithHistoryPage'
 import { SnapshotsPage } from '@/features/snapshots/SnapshotsPage'
 
 export default function App() {
@@ -21,7 +21,7 @@ export default function App() {
               <Route path="/auth/mfa" element={<MfaChallengePage />} />
               <Route element={<MfaGuard />}>
                 <Route element={<AppShell />}>
-                  <Route path="/" element={<DashboardPage />} />
+                  <Route path="/" element={<DashboardWithHistoryPage />} />
                   <Route path="/holdings" element={<HoldingsPage />} />
                   <Route path="/accounts" element={<AccountsPage />} />
                   <Route path="/assets" element={<ValueItemsPage kind="asset" />} />
