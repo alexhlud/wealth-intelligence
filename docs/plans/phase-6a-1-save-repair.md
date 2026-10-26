@@ -1,4 +1,4 @@
-# Phase 6a-1 repair — snapshot-save diagnostics and MFA recovery
+# Phase 6a-1 repair — snapshot JSON-key regression
 
 ## Objective and boundary
 
@@ -18,61 +18,35 @@ No new dependency is planned.
 the session, current state, and fresh quotes can be assembled. Only save then
 calls `app.create_portfolio_snapshot` using the caller's JWT.
 
-That public RPC is wrapped by the Phase MFA-1 migration and calls
-`app.require_mfa_assurance()`. Its existing database test proves that a
-verified-factor AAL1 session is rejected with SQLSTATE `42501`, message `MFA
-verification required`. The current Edge Function catch discards this error
-and returns a generic 503, producing the reported production symptom.
+Production logging disproved the earlier MFA diagnosis: the save reached the
+database and failed with SQLSTATE `42703`, `column k.key does not exist`.
 
-The confirmed production migration
-`20261024000000_phase_6a_1_current_quote_close.sql` accepts
-`current_quote_close` in both the table constraint and RPC payload validation.
-It is not the cause.
+`20261024000000_phase_6a_1_current_quote_close.sql` replaced
+`app.insert_snapshot_revision`. Its JSON allowlist checks alias
+`jsonb_object_keys(...)` as `k`, then reference `k.key`; unlike the prior
+implementation, that replacement did not name the function's output column.
+Every non-empty child payload therefore fails before validation or inserts.
+MFA remains a separate, correctly enforced authorization rule, not the cause
+of this incident.
 
 ## Implementation plan
 
-1. Add a narrow server-side error normalizer for snapshot capture failures.
-   Log only operation, a stable failure category, error class/name, error
-   message, SQLSTATE/code, and safe Supabase details/hint when present. Do not
-   log tokens, API keys, financial values, holdings, prices, provider payloads,
-   or raw request bodies. Continue returning a generic browser error for
-   unexpected provider/database failures.
-2. Recognize only the existing MFA rejection (`42501` plus the known MFA
-   message) as a safe, authored `mfa_required` outcome. Return that normalized
-   outcome rather than the raw database text; do not expose SQLSTATE, stack,
-   provider, or database details to the browser.
-3. Keep all other RPC/database failures as generic unavailable responses, but
-   retain their diagnostic class/message/code in Edge Function logs. Preserve
-   duplicate-session and normal `saved` behavior.
-4. Update the Save snapshot dialog to parse the normalized MFA outcome and
-   retain the prepared preview. Display an accessible inline alert explaining
-   that the secure session needs authenticator verification, with an authored
-   action to `/auth/mfa`; generic failures remain an authored retryable save
-   error. Never render server error text.
-5. Add focused tests for (a) successful save: correct request, invalidation,
-   and close; (b) failed save: the dialog remains open and announces the safe
-   error/action; and (c) MFA normalized response routes to verification
-   without displaying raw server detail. Add Edge Function coverage for
-   diagnostic normalization, including a database-shaped error and a native
-   `Error`, asserting no financial or credential data is logged.
-6. Run `npm run build`, `npm run lint`, `npm run test`, and `npm run test:rls`.
+1. Add a forward-only migration replacing the JSON-key aliases with explicit
+   `as k(key)` output-column aliases in the existing helper definition.
+2. Add a database regression test that invokes the public
+   `create_portfolio_snapshot` RPC with a realistic position using
+   `current_quote_close`, then verifies the persisted immutable leaf.
+3. Run `npm run build`, `npm run lint`, `npm run test`, and `npm run test:rls`.
 
 ## Targeted files
 
-- `supabase/functions/market-data/index.ts`
-- `supabase/functions/market-data/snapshot.ts` and focused function tests
-- `src/features/snapshots/SnapshotsPage.tsx` and a focused component test
-- no schema or permission migration is expected
+- `supabase/migrations/20261024010000_phase_6a_1_snapshot_json_key_fix.sql`
+- `supabase/tests/snapshots.sql`
 
 ## Acceptance criteria
 
-- An AAL2 user can save a prepared snapshot through the existing owner-scoped
-  RPC.
-- An AAL1 user with a verified factor receives an authored MFA-verification
-  path, not a silent dialog or raw database message.
-- Provider and database save failures preserve a safe generic browser response
-  and produce diagnostics sufficient to identify error class/message/code in
-  server logs.
-- Logs never include a key, financial value, holding, provider response, or
-  request payload.
+- A non-empty snapshot payload succeeds through the existing owner-scoped RPC.
+- A `current_quote_close` price kind is accepted and persisted immutably.
+- The JSON allowlist still rejects unexpected payload fields rather than
+  bypassing validation.
 - The full build, lint, unit-test, and RLS-test gate passes.
