@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
+import { subtractDecimals } from '@/features/portfolio/prices'
 
 export const decimal = z.string().regex(/^-?(?:0|[1-9]\d*)(?:\.\d{1,12})?$/)
 export const snapshotSchema = z.object({
@@ -66,3 +67,59 @@ export async function loadSnapshotDetail(portfolioId: string, snapshotId: string
 }
 
 export function dateLabel(value: string) { return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'America/New_York' }).format(new Date(`${value}T12:00:00Z`)) }
+
+export type HoldingChangeKind = 'added' | 'removed' | 'increased' | 'reduced' | 'unchanged'
+export type RecordedHoldingChange = {
+  key: string
+  kind: HoldingChangeKind
+  earlier: RecordedSnapshotDetail['positions'][number] | null
+  later: RecordedSnapshotDetail['positions'][number] | null
+  quantityChange: string | null
+  valueChange: string | null
+  allocationPointChange: string | null
+}
+
+function compareDecimals(left: string, right: string) {
+  const difference = subtractDecimals(left, right)
+  return difference === '0' ? 0 : difference.startsWith('-') ? -1 : 1
+}
+
+function holdingKey(position: RecordedSnapshotDetail['positions'][number]) {
+  return `${position.account_label}\u0000${position.symbol}\u0000${position.security_name}`
+}
+
+/** Joins immutable snapshot facts; it never substitutes current holdings or prices. */
+export function compareRecordedHoldings(earlier: RecordedSnapshotDetail, later: RecordedSnapshotDetail): RecordedHoldingChange[] {
+  const earlierByKey = new Map(earlier.positions.map((position) => [holdingKey(position), position]))
+  const laterByKey = new Map(later.positions.map((position) => [holdingKey(position), position]))
+  return [...new Set([...earlierByKey.keys(), ...laterByKey.keys()])].map((key) => {
+    const before = earlierByKey.get(key) ?? null
+    const after = laterByKey.get(key) ?? null
+    const direction = before && after ? compareDecimals(after.quantity, before.quantity) : 0
+    return {
+      key,
+      kind: !before ? 'added' : !after ? 'removed' : direction > 0 ? 'increased' : direction < 0 ? 'reduced' : 'unchanged',
+      earlier: before,
+      later: after,
+      quantityChange: before && after ? subtractDecimals(after.quantity, before.quantity) : null,
+      valueChange: before && after ? subtractDecimals(after.market_value, before.market_value) : null,
+      allocationPointChange: before && after ? subtractDecimals(after.portfolio_weight, before.portfolio_weight) : null,
+    }
+  })
+}
+
+export type RecordedValueChange = { key: string; name: string; category: string; accountLabel: string | null; earlier: string | null; later: string | null; change: string | null }
+type RecordedValue = { name: string; category: string; account_label: string | null; value: string }
+
+function valueKey(item: RecordedValue) { return `${item.account_label ?? ''}\u0000${item.category}\u0000${item.name}` }
+
+export function compareRecordedValues(earlier: readonly RecordedValue[], later: readonly RecordedValue[]): RecordedValueChange[] {
+  const earlierByKey = new Map(earlier.map((item) => [valueKey(item), item]))
+  const laterByKey = new Map(later.map((item) => [valueKey(item), item]))
+  return [...new Set([...earlierByKey.keys(), ...laterByKey.keys()])].map((key) => {
+    const before = earlierByKey.get(key)
+    const after = laterByKey.get(key)
+    const item = after ?? before!
+    return { key, name: item.name, category: item.category, accountLabel: item.account_label, earlier: before?.value ?? null, later: after?.value ?? null, change: before && after ? subtractDecimals(after.value, before.value) : null }
+  })
+}
