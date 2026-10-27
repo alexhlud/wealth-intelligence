@@ -1,0 +1,44 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { HistoryPage } from './HistoryPage'
+
+const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }))
+vi.mock('@/lib/supabase', () => ({ supabase: { rpc } }))
+
+const portfolio = { id: '11111111-1111-4111-8111-111111111111', name: 'Primary' }
+const snapshots = [
+  { id: '22222222-2222-4222-8222-222222222222', as_of_date: '2026-08-28', market_close_at: '2026-08-28T20:00:00.000Z', total_net_worth: '100000.00', created_at: '2026-08-28T20:01:00.000Z', source: 'backfill' },
+  { id: '33333333-3333-4333-8333-333333333333', as_of_date: '2026-09-30', market_close_at: '2026-09-30T20:00:00.000Z', total_net_worth: '102500.00', created_at: '2026-09-30T20:01:00.000Z', source: 'backfill' },
+]
+const detail = { snapshot: { ...snapshots[1], investment_value: '100000.00', manual_asset_value: '2500.00', liability_value: '0.00', exchange_mic: 'XNYS', exchange_timezone: 'America/New_York' }, positions: [], manual_assets: [], liabilities: [] }
+
+function renderPage(path = '/history?date=2026-08-28') {
+  rpc.mockImplementation((name: string) => {
+    if (name === 'ensure_primary_portfolio') return Promise.resolve({ data: portfolio, error: null })
+    if (name === 'list_recorded_snapshot_history') return Promise.resolve({ data: snapshots, error: null })
+    return Promise.resolve({ data: detail, error: null })
+  })
+  render(<MemoryRouter initialEntries={[path]}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><HistoryPage /></QueryClientProvider></MemoryRouter>)
+}
+
+describe('HistoryPage', () => {
+  afterEach(() => { cleanup(); rpc.mockReset() })
+
+  it('uses a stored deep-link date and lets the recorded-day picker pin another fact', async () => {
+    renderPage()
+    expect(await screen.findByText('As of Aug 28, 2026')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Next month' }))
+    fireEvent.click(within(await screen.findByRole('list', { name: /September 2026/ })).getByRole('button', { name: /Sep 30, 2026, \$102,500/ }))
+    expect(await screen.findByText('As of Sep 30, 2026')).toBeTruthy()
+    expect(await screen.findByText('Recorded composition')).toBeTruthy()
+  })
+
+  it('falls back truthfully when a deep link is not a recorded date', async () => {
+    renderPage('/history?date=invalid')
+    expect(await screen.findByText(/That date has no recorded snapshot/)).toBeTruthy()
+    expect(screen.getByText('As of Sep 30, 2026')).toBeTruthy()
+  })
+})

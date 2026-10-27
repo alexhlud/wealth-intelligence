@@ -7,6 +7,7 @@ import { AppErrorBoundary } from '@/components/AppErrorBoundary'
 import { AppShell } from '@/components/AppShell'
 import { ValueItemsPage } from '@/features/assets/ValueItemsPage'
 import { DashboardWithHistoryPage } from '@/features/history/DashboardWithHistoryPage'
+import { HistoryPage } from '@/features/history/HistoryPage'
 import { SnapshotsPage } from '@/features/snapshots/SnapshotsPage'
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
               <Route element={<MfaGuard />}>
                 <Route element={<AppShell />}>
                   <Route path="/" element={<DashboardWithHistoryPage />} />
+                  <Route path="/history" element={<HistoryPage />} />
                   <Route path="/holdings" element={<HoldingsPage />} />
                   <Route path="/accounts" element={<AccountsPage />} />
                   <Route path="/assets" element={<ValueItemsPage kind="asset" />} />
