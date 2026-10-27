@@ -14,6 +14,10 @@ const snapshots = [
   { id: '33333333-3333-4333-8333-333333333333', as_of_date: '2026-09-30', market_close_at: '2026-09-30T20:00:00.000Z', total_net_worth: '102500.00', created_at: '2026-09-30T20:01:00.000Z', source: 'backfill' },
 ]
 const detail = { snapshot: { ...snapshots[1], investment_value: '100000.00', manual_asset_value: '2500.00', liability_value: '0.00', exchange_mic: 'XNYS', exchange_timezone: 'America/New_York' }, positions: [], manual_assets: [], liabilities: [] }
+const recordedPositions = [
+  { source_position_id: null, account_label: 'Brokerage', symbol: 'QQQ', security_name: 'Invesco QQQ Trust', asset_type: 'etf', quantity: '16.000000000000', average_cost: '400.00000000', market_price: '480.00000000', price_at: '2026-09-30T20:00:00.000Z', market_value: '7680.00000000', cost_basis: '6400.00000000', unrealized_gain: '1280.00000000', portfolio_weight: '0.477030224746', price_source: 'user supplied manual price', price_kind: 'manual' },
+  { source_position_id: null, account_label: 'Brokerage', symbol: 'VOO', security_name: 'Vanguard S&P 500 ETF', asset_type: 'etf', quantity: '20.500000000000', average_cost: '500.00000000', market_price: '550.00000000', price_at: '2026-09-30T20:00:00.000Z', market_value: '11275.00000000', cost_basis: '10250.00000000', unrealized_gain: '1025.00000000', portfolio_weight: '0.522969775254', price_source: 'user supplied manual price', price_kind: 'manual' },
+]
 
 function renderPage(path = '/history?date=2026-08-28', detailResponse: unknown = detail) {
   rpc.mockImplementation((name: string) => {
@@ -46,5 +50,15 @@ describe('HistoryPage', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     renderPage('/history?date=2026-09-30', { ...detail, liabilities: [{ source_liability_id: null, name: 'Car loan', category: 'vehicle_loan', account_label: null, balance: '18000.00000000', include_in_net_worth: true, effective_at: '2026-09-30T20:00:00.000Z' }] })
     expect(await screen.findByText('We received this recorded snapshot, but could not verify its details.')).toBeTruthy()
+  })
+
+  it('formats recorded quantities and allocation fractions when rendering the holdings table', async () => {
+    renderPage('/history?date=2026-09-30', { ...detail, positions: recordedPositions })
+    expect(await screen.findByText('16')).toBeTruthy()
+    expect(screen.getByText('20.5')).toBeTruthy()
+    expect(screen.getByText('47.70%')).toBeTruthy()
+    expect(screen.getByText('52.30%')).toBeTruthy()
+    expect(screen.queryByText('16.000000000000')).toBeNull()
+    expect(screen.queryByText('0.477030224746')).toBeNull()
   })
 })

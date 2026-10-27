@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatUsd, marketValue, percentageOf, sumDecimals } from './prices'
+import { formatQuantity, formatUsd, marketValue, percentageOf, sumDecimals } from './prices'
 
 describe('fixed-price calculations', () => {
   it('multiplies fractional values without a floating-point conversion', () => {
@@ -18,6 +18,12 @@ describe('fixed-price calculations', () => {
   it('calculates allocations without floating-point arithmetic', () => {
     expect(percentageOf('25', '100')).toBe('25.00%')
     expect(percentageOf('1', '3')).toBe('33.33%')
+    expect(percentageOf('0.522969775254', '1')).toBe('52.30%')
     expect(percentageOf('1', '0')).toBeNull()
+  })
+
+  it('trims only non-significant quantity zeroes for display', () => {
+    expect(formatQuantity('16.000000000000')).toBe('16')
+    expect(formatQuantity('20.500000000000')).toBe('20.5')
   })
 })
