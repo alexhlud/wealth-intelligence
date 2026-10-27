@@ -61,4 +61,15 @@ describe('HistoryPage', () => {
     expect(screen.queryByText('16.000000000000')).toBeNull()
     expect(screen.queryByText('0.477030224746')).toBeNull()
   })
+
+  it('opens a two-recorded-date comparison with explicit earlier and later selectors', async () => {
+    renderPage('/history?date=2026-08-28')
+    fireEvent.click(await screen.findByRole('button', { name: 'Compare recorded dates' }))
+    expect(screen.getByLabelText('Earlier')).toBeTruthy()
+    expect(screen.getByLabelText('Later')).toBeTruthy()
+    expect(await screen.findByText(/Recorded change between these snapshots/)).toBeTruthy()
+    expect(await screen.findByText('Recorded holdings')).toBeTruthy()
+    expect(screen.getAllByText('Manual assets').length).toBeGreaterThan(1)
+    expect(screen.getAllByText('Liabilities').length).toBeGreaterThan(1)
+  })
 })

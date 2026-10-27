@@ -7,6 +7,7 @@ import { formatQuantity, formatUsd, percentageOf } from '@/features/portfolio/pr
 import { portfolioResponseSchema } from '@/lib/validation'
 import { supabase } from '@/lib/supabase'
 import { RecordedNetWorthChart } from './RecordedNetWorthChart'
+import { RecordedDateComparison } from './RecordedDateComparison'
 import { dateLabel, loadHistory, loadSnapshotDetail, RecordedSnapshotDetailContractError } from './data'
 
 const dateParameter = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -48,6 +49,7 @@ export function HistoryPage() {
       {selected && <section className="time-machine-reading" aria-live="polite"><p>As of {dateLabel(selected.as_of_date)}</p><strong>{formatUsd(selected.total_net_worth)}</strong><span>Recorded snapshot · XNYS close · {selected.source}</span></section>}
       {visibleMonth && <section className="month-picker" aria-labelledby="recorded-date-heading"><div className="month-picker-heading"><h2 id="recorded-date-heading">Recorded date</h2><div><button type="button" className="button button-secondary" onClick={() => setVisibleMonth(shiftMonth(visibleMonth, -1))} aria-label="Previous month">Previous month</button><strong aria-live="polite">{monthLabel(visibleMonth)}</strong><button type="button" className="button button-secondary" onClick={() => setVisibleMonth(shiftMonth(visibleMonth, 1))} aria-label="Next month">Next month</button></div></div>{monthSnapshots.length ? <div className="recorded-days" role="list" aria-label={`Recorded snapshots in ${monthLabel(visibleMonth)}`}>{monthSnapshots.map((snapshot) => <button key={snapshot.id} type="button" className={snapshot.id === selected?.id ? 'active' : ''} onClick={() => select(snapshot.as_of_date)} aria-label={`Select recorded snapshot for ${dateLabel(snapshot.as_of_date)}, ${formatUsd(snapshot.total_net_worth)}`}><span>{snapshot.as_of_date.slice(8)}</span><small>{formatUsd(snapshot.total_net_worth)}</small></button>)}</div> : <p className="history-empty">No recorded snapshots in {monthLabel(visibleMonth)}.</p>}</section>}
       <RecordedNetWorthChart portfolioId={portfolio.data.id} selectedId={selected?.id} onSelect={(snapshot) => select(snapshot.as_of_date)} />
+      <RecordedDateComparison portfolioId={portfolio.data.id} snapshots={snapshots} pinnedId={selected?.id ?? null} />
       {detail.isPending ? <LoadingState>Loading this recorded snapshot...</LoadingState> : detail.isError ? <ErrorState onRetry={() => void detail.refetch()}>{detail.error instanceof RecordedSnapshotDetailContractError ? 'We received this recorded snapshot, but could not verify its details.' : undefined}</ErrorState> : detail.data ? <RecordedDetail detail={detail.data} /> : null}
     </>}
   </section>

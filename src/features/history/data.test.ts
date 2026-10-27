@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { loadSnapshotDetail, RecordedSnapshotDetailContractError } from './data'
+import { compareRecordedHoldings, compareRecordedValues, loadSnapshotDetail, RecordedSnapshotDetailContractError } from './data'
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock('@/lib/supabase', () => ({ supabase: { rpc } }))
@@ -41,5 +41,23 @@ describe('loadSnapshotDetail', () => {
     expect(consoleError).toHaveBeenCalledWith('Recorded snapshot detail contract validation failed.', {
       issues: [{ path: 'snapshot.total_net_worth', code: 'invalid_type', rule: 'Invalid input: expected string, received number' }],
     })
+  })
+})
+
+describe('recorded-date comparison facts', () => {
+  const snapshot = (positions: unknown[], manual_assets: unknown[] = [], liabilities: unknown[] = []) => ({ ...recordedDetailResponse, positions, manual_assets, liabilities }) as Awaited<ReturnType<typeof loadSnapshotDetail>>
+  const holding = (symbol: string, quantity: string, value: string, weight = '0.100000000000') => ({ ...recordedDetailResponse.positions[0], symbol, quantity, market_value: value, portfolio_weight: weight })
+
+  it('classifies immutable recorded holdings without creating absent-side zero values', () => {
+    const changes = compareRecordedHoldings(snapshot([holding('QQQ', '10.000000000000', '1000.00'), holding('VOO', '2.000000000000', '200.00')]), snapshot([holding('QQQ', '12.000000000000', '1440.00'), holding('NVDA', '3.000000000000', '300.00')]))
+    expect(changes.map((change) => change.kind)).toEqual(expect.arrayContaining(['increased', 'removed', 'added']))
+    expect(changes.find((change) => change.earlier?.symbol === 'VOO')).toMatchObject({ later: null, quantityChange: null, valueChange: null })
+    expect(changes.find((change) => change.later?.symbol === 'NVDA')).toMatchObject({ earlier: null, quantityChange: null, valueChange: null })
+    expect(changes.find((change) => change.earlier?.symbol === 'QQQ')).toMatchObject({ quantityChange: '2', valueChange: '440', allocationPointChange: '0' })
+  })
+
+  it('compares recorded manual values without numeric coercion', () => {
+    const values = compareRecordedValues([{ name: 'Cash', category: 'cash', account_label: 'Savings', value: '1000.10' }], [{ name: 'Cash', category: 'cash', account_label: 'Savings', value: '1000.30' }, { name: 'Home', category: 'real_estate', account_label: null, value: '500000.00' }])
+    expect(values).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'Cash', change: '0.2' }), expect.objectContaining({ name: 'Home', earlier: null, later: '500000.00', change: null })]))
   })
 })
