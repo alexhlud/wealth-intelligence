@@ -466,7 +466,7 @@ select ok(not exists (
 select is((select count(*) from pg_catalog.pg_proc p
            join pg_catalog.pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'app' and p.prosecdef),
-  5::bigint, 'Only the four public write RPCs and the MFA factor-state helper are SECURITY DEFINER');
+  6::bigint, 'Only the five public write RPCs and the MFA factor-state helper are SECURITY DEFINER');
 select ok(not exists (
   select 1 from pg_catalog.pg_proc p
   join pg_catalog.pg_namespace n on n.oid = p.pronamespace

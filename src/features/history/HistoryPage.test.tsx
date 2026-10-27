@@ -15,17 +15,17 @@ const snapshots = [
 ]
 const detail = { snapshot: { ...snapshots[1], investment_value: '100000.00', manual_asset_value: '2500.00', liability_value: '0.00', exchange_mic: 'XNYS', exchange_timezone: 'America/New_York' }, positions: [], manual_assets: [], liabilities: [] }
 
-function renderPage(path = '/history?date=2026-08-28') {
+function renderPage(path = '/history?date=2026-08-28', detailResponse: unknown = detail) {
   rpc.mockImplementation((name: string) => {
     if (name === 'ensure_primary_portfolio') return Promise.resolve({ data: portfolio, error: null })
     if (name === 'list_recorded_snapshot_history') return Promise.resolve({ data: snapshots, error: null })
-    return Promise.resolve({ data: detail, error: null })
+    return Promise.resolve({ data: detailResponse, error: null })
   })
   render(<MemoryRouter initialEntries={[path]}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><HistoryPage /></QueryClientProvider></MemoryRouter>)
 }
 
 describe('HistoryPage', () => {
-  afterEach(() => { cleanup(); rpc.mockReset() })
+  afterEach(() => { cleanup(); rpc.mockReset(); vi.restoreAllMocks() })
 
   it('uses a stored deep-link date and lets the recorded-day picker pin another fact', async () => {
     renderPage()
@@ -40,5 +40,11 @@ describe('HistoryPage', () => {
     renderPage('/history?date=invalid')
     expect(await screen.findByText(/That date has no recorded snapshot/)).toBeTruthy()
     expect(screen.getByText('As of Sep 30, 2026')).toBeTruthy()
+  })
+
+  it('distinguishes an unverifiable recorded-detail contract from a request failure', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    renderPage('/history?date=2026-09-30', { ...detail, liabilities: [{ source_liability_id: null, name: 'Car loan', category: 'vehicle_loan', account_label: null, balance: '18000.00000000', include_in_net_worth: true, effective_at: '2026-09-30T20:00:00.000Z' }] })
+    expect(await screen.findByText('We received this recorded snapshot, but could not verify its details.')).toBeTruthy()
   })
 })
