@@ -159,6 +159,19 @@ select ok((select account_label = 'Snapshot Brokerage'
                   and price_source = 'test-feed' and price_kind = 'raw_close'
            from app.snapshot_positions where symbol = 'QQQ'),
   'Historical identifying, account, and raw-price metadata is copied');
+select ok((
+  select jsonb_typeof(detail -> 'snapshot' -> 'total_net_worth') = 'string'
+    and jsonb_typeof(detail -> 'positions' -> 0 -> 'quantity') = 'string'
+    and detail -> 'liabilities' -> 0 ? 'value'
+    and not (detail -> 'liabilities' -> 0 ? 'balance')
+    and jsonb_typeof(detail -> 'liabilities' -> 0 -> 'value') = 'string'
+  from (
+    select app.get_recorded_snapshot_detail(
+      (select id from snapshot_test_ids where name = 'owner_portfolio'),
+      (select id from snapshot_test_ids where name = 'original_snapshot')
+    ) as detail
+  ) as recorded_detail
+), 'Recorded-detail RPC normalizes liability balance to a string value contract');
 
 select lives_ok($$
   select app.create_portfolio_snapshot(
@@ -554,7 +567,7 @@ select throws_ok($$
     (select id from snapshot_test_ids where name = 'original_snapshot'),
     'Competing correction', '[]', '[]', '[]',
     'cccccccc-3000-0000-0000-000000000002')
-$$, '22023', 'Snapshot is not correction-chain leaf',
+$$, 'P0001', 'Snapshot is not correction-chain leaf',
   'A non-leaf snapshot cannot receive a competing correction');
 
 select set_config('request.jwt.claim.sub', '44444444-4444-4444-4444-444444444444', true);
@@ -843,7 +856,7 @@ select ok(
 select is((select count(*) from pg_catalog.pg_proc as p
            join pg_catalog.pg_namespace as n on n.oid = p.pronamespace
            where n.nspname = 'app' and p.prosecdef),
-  5::bigint, 'Exactly the four approved write RPCs and the MFA factor-state helper are SECURITY DEFINER');
+  6::bigint, 'Exactly the five approved write RPCs and the MFA factor-state helper are SECURITY DEFINER');
 select ok(not exists (
   select 1 from pg_catalog.pg_proc as p
   join pg_catalog.pg_namespace as n on n.oid = p.pronamespace
