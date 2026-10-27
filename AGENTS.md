@@ -38,7 +38,11 @@ npm run lint
 
 - One phase at a time. Do not start a later phase because it looks related.
 - Write the plan to docs/plans/phase-N.md and stop for review before
-  writing implementation code.
+  implementation when changing schema, migrations, RLS, auth, RPCs, security
+  boundaries, or anything hard to reverse. Implement directly for display
+  formatting, copy changes, diagnosed bug fixes, and changes confined to one
+  component with no data or security implication; report what changed. When in
+  doubt, plan first.
 - Targeted edits to named files. Do not reformat or restructure files
   unrelated to the task.
 - No placeholder or "future" files the current phase doesn't use.

@@ -20,6 +20,13 @@ export function formatUsd(value: string): string {
   return `$${dollars}.${fraction.padEnd(2, '0').slice(0, 2)}`
 }
 
+/** Formats a stored decimal for display without changing its significant precision. */
+export function formatQuantity(value: string): string {
+  const [whole, fraction = ''] = value.split('.')
+  const significantFraction = fraction.replace(/0+$/, '')
+  return significantFraction ? `${whole}.${significantFraction}` : whole
+}
+
 export function sumDecimals(values: readonly string[]): string {
   const scale = Math.max(0, ...values.map((value) => value.split('.')[1]?.length ?? 0))
   const total = values.reduce((sum, value) => {
@@ -42,7 +49,10 @@ export function percentageOf(value: string, total: string): string | null {
   }
   const denominator = asInteger(total)
   if (denominator === 0n) return null
-  const hundredths = (asInteger(value) * 10000n) / denominator
+  const numerator = asInteger(value) * 10000n
+  const hundredths = numerator >= 0n
+    ? (numerator + denominator / 2n) / denominator
+    : (numerator - denominator / 2n) / denominator
   return `${hundredths / 100n}.${(hundredths % 100n).toString().padStart(2, '0')}%`
 }
 
