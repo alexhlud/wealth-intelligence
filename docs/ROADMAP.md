@@ -63,6 +63,14 @@ Wealth goals and milestones. Future wealth calculator with nominal and
 inflation-adjusted toggle. Projection language must never imply
 guarantees.
 
+The projector starts from the user's own recorded numbers rather than asking
+them to type a starting balance. Presets for Coast FIRE with no further
+contributions, a maxed Roth at roughly $625 per month, $1,000 per month,
+$2,000 per month, and a custom amount. Projects to a chosen horizon in years
+rather than stopping at a retirement age, with each point clearly labelled.
+Nominal and inflation-adjusted shown together. Always labelled as projected
+under stated assumptions, never implied as a guarantee.
+
 ### Phase 9 — Public surface
 Landing page. Fictional demo portfolio using bundled deterministic data,
 never real user rows. Privacy mode. Responsive polish.
