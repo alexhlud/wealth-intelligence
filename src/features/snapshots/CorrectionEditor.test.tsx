@@ -33,6 +33,8 @@ describe('CorrectionEditor', () => {
     expect(screen.getByRole('heading', { name: 'Holdings' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Manual assets' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Liabilities' })).toBeTruthy()
+    expect(await screen.findByLabelText('Use recorded asset (optional)')).toBeTruthy()
+    expect(screen.getByLabelText('Use recorded liability (optional)')).toBeTruthy()
     expect(screen.queryByText(/newer revision/i)).toBeNull()
 
     fireEvent.change(screen.getByLabelText('Reason for correction'), { target: { value: 'Correct recorded close' } })
