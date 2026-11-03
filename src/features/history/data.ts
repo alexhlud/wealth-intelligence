@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
 import { subtractDecimals } from '@/features/portfolio/prices'
+import { logZodContractDiagnostic, sanitizedZodContractIssues, type SanitizedZodContractIssue } from '@/lib/zodContractDiagnostic'
 
 export const decimal = z.string().regex(/^-?(?:0|[1-9]\d*)(?:\.\d{1,12})?$/)
 export const snapshotSchema = z.object({
@@ -11,11 +12,7 @@ export const snapshotsSchema = z.array(snapshotSchema)
 export type RecordedSnapshot = z.infer<typeof snapshotSchema>
 const captureGapSchema = z.object({ as_of_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), reason: z.enum(['daily_close', 'position_change']), failure_category: z.string().nullable() })
 
-export type RecordedSnapshotDetailContractIssue = {
-  path: string
-  code: string
-  rule: string
-}
+export type RecordedSnapshotDetailContractIssue = SanitizedZodContractIssue
 
 export class RecordedSnapshotDetailContractError extends Error {
   readonly issues: readonly RecordedSnapshotDetailContractIssue[]
@@ -69,8 +66,8 @@ export async function loadSnapshotDetail(portfolioId: string, snapshotId: string
   if (error) throw error
   const parsed = detailSchema.safeParse(data)
   if (!parsed.success) {
-    const issues = parsed.error.issues.map((issue) => ({ path: issue.path.join('.') || '(root)', code: issue.code, rule: issue.message }))
-    if (import.meta.env.DEV) console.error('Recorded snapshot detail contract validation failed.', { issues })
+    const issues = sanitizedZodContractIssues(parsed.error.issues)
+    logZodContractDiagnostic('Recorded snapshot detail', issues)
     throw new RecordedSnapshotDetailContractError(issues)
   }
   return parsed.data

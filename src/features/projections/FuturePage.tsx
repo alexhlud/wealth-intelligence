@@ -8,6 +8,7 @@ import { useQuotes } from '@/features/market-data/useQuotes'
 import { ErrorState, LoadingState } from '@/components/ui/States'
 import { project, type ProjectionBaseline } from './math'
 import { standardMilestones } from '@/features/dashboard/milestones'
+import { parseProjectionBaselineResponse } from './data'
 
 const decimal = z.string().regex(/^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/)
 const assumptionsSchema = z.object({ investmentRate: z.string().regex(/^-?(?:0|[1-9]\d*)(?:\.\d{1,8})?$/), inflationRate: z.string().regex(/^-?(?:0|[1-9]\d*)(?:\.\d{1,8})?$/), years: z.coerce.number().int().min(1).max(60), custom: decimal })
@@ -23,7 +24,7 @@ async function load() {
     supabase.rpc('get_newest_projection_snapshot_baseline', { p_portfolio_id: portfolio.id }),
   ])
   if (accounts.error || positions.error || assets.error || liabilities.error || snapshot.error) throw new Error('Future projection unavailable')
-  return { portfolio, accounts: accountResponseSchema.parse(accounts.data), positions: openPositionResponseSchema.parse(positions.data), assets: manualAssetResponseSchema.parse(assets.data), liabilities: liabilityResponseSchema.parse(liabilities.data), snapshot: z.array(z.object({ as_of_date: z.string(), investment_value: decimal, manual_asset_value: decimal, liability_value: decimal })).parse(snapshot.data).at(0) ?? null }
+  return { portfolio, accounts: accountResponseSchema.parse(accounts.data), positions: openPositionResponseSchema.parse(positions.data), assets: manualAssetResponseSchema.parse(assets.data), liabilities: liabilityResponseSchema.parse(liabilities.data), snapshot: parseProjectionBaselineResponse(snapshot.data) }
 }
 
 function Chart({ paths, mode }: { paths: { name: string; points: ReturnType<typeof project> }[]; mode: 'nominal' | 'real' }) {

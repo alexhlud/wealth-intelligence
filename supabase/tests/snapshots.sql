@@ -910,5 +910,16 @@ select ok(
     'app.get_newest_projection_snapshot_baseline(uuid)', 'EXECUTE'),
   'Only authenticated users may execute the recorded projection baseline RPC');
 
+select ok(
+  pg_catalog.pg_get_function_result('app.get_newest_projection_snapshot_baseline(uuid)'::regprocedure)
+    like '%investment_value text%'
+    and pg_catalog.pg_get_function_result('app.get_newest_projection_snapshot_baseline(uuid)'::regprocedure)
+      like '%manual_asset_value text%'
+    and pg_catalog.pg_get_function_result('app.get_newest_projection_snapshot_baseline(uuid)'::regprocedure)
+      like '%liability_value text%'
+    and pg_catalog.pg_get_function_result('app.get_newest_projection_snapshot_baseline(uuid)'::regprocedure)
+      like '%total_net_worth text%',
+  'The recorded projection baseline RPC declares all financial outputs as text');
+
 select * from finish();
 rollback;
