@@ -5,6 +5,10 @@
 Do these steps before applying the migration. Do not put the secret in a
 `.env`, a Cloudflare variable, or any browser setting.
 
+The migration enables the required `pg_cron` and `pg_net` extensions itself.
+If your Supabase plan or organization policy prevents extension creation,
+enable both in **Database → Extensions** before running `supabase db push`.
+
 1. In Supabase Dashboard, open the project, then **Project Settings → Edge
    Functions → Secrets**.
 2. Create `SNAPSHOT_CAPTURE_SCHEDULER_SECRET` with a newly generated random
