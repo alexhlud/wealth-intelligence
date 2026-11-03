@@ -115,3 +115,17 @@ export function getCurrentQuoteCaptureSession(now = new Date()): XnysSessionResu
   }
   return session
 }
+
+/** Completed reviewed sessions strictly after `afterDate`, ending before `throughDate`. */
+export function getSessionsAfter(afterDate: string | null, throughDate: string): XnysSession[] {
+  if (!afterDate) return []
+  const result: XnysSession[] = []
+  let date = addDays(afterDate, 1)
+  while (date < throughDate && result.length < 40) {
+    const session = getXnysSession(date)
+    if (session.kind === 'session') result.push(session)
+    if (session.kind === 'non_session' && session.reason === 'outside_coverage') break
+    date = addDays(date, 1)
+  }
+  return result
+}

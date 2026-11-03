@@ -10,3 +10,6 @@ additional_redirect_urls = ["http://localhost:5173/auth/callback", "https://weal
 
 [functions.market-data]
 verify_jwt = true
+
+[functions.snapshot-capture]
+verify_jwt = false

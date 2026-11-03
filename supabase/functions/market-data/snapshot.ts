@@ -11,7 +11,7 @@ export type SnapshotResult =
 const decimal = (value: unknown) => String(value)
 const after = (value: unknown, instant: string) => typeof value === 'string' && Date.parse(value) > Date.parse(instant)
 
-async function build(admin: SupabaseClient, userId: string, portfolioId: string, apiKey: string): Promise<{ result: SnapshotResult; payload?: Payload }> {
+export async function buildSnapshot(admin: SupabaseClient, userId: string, portfolioId: string, apiKey: string): Promise<{ result: SnapshotResult; payload?: Payload }> {
   const session = getCurrentQuoteCaptureSession()
   if (session.kind !== 'session') return { result: { kind: 'unavailable', reason: session.reason === 'outside_coverage' ? 'outside_capture_window' : 'no_session' } }
   const [existingResult, accountsResult, positionsResult, assetsResult, liabilitiesResult] = await Promise.all([
@@ -48,10 +48,10 @@ async function build(admin: SupabaseClient, userId: string, portfolioId: string,
   }
 }
 
-export async function previewSnapshot(admin: SupabaseClient, userId: string, portfolioId: string, apiKey: string) { return (await build(admin, userId, portfolioId, apiKey)).result }
+export async function previewSnapshot(admin: SupabaseClient, userId: string, portfolioId: string, apiKey: string) { return (await buildSnapshot(admin, userId, portfolioId, apiKey)).result }
 
 export async function saveSnapshot(admin: SupabaseClient, userClient: SupabaseClient, userId: string, portfolioId: string, requestId: string, apiKey: string) {
-  const built = await build(admin, userId, portfolioId, apiKey)
+  const built = await buildSnapshot(admin, userId, portfolioId, apiKey)
   if (built.result.kind !== 'ready' || !built.payload) return built.result
   const { data, error } = await userClient.rpc('create_portfolio_snapshot', { p_portfolio_id: portfolioId, p_as_of_date: built.result.session.asOfDate, p_market_close_at: built.result.session.marketCloseAt, p_source: 'manual', p_positions: built.payload.positions, p_manual_assets: built.payload.manualAssets, p_liabilities: built.payload.liabilities, p_request_id: requestId })
   if (error) {
