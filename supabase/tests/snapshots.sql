@@ -856,7 +856,7 @@ select ok(
 select is((select count(*) from pg_catalog.pg_proc as p
            join pg_catalog.pg_namespace as n on n.oid = p.pronamespace
            where n.nspname = 'app' and p.prosecdef),
-  6::bigint, 'Exactly the five approved write RPCs and the MFA factor-state helper are SECURITY DEFINER');
+  9::bigint, 'The approved write RPCs, MFA helper, and snapshot-capture internals are SECURITY DEFINER');
 select ok(not exists (
   select 1 from pg_catalog.pg_proc as p
   join pg_catalog.pg_namespace as n on n.oid = p.pronamespace
@@ -902,6 +902,13 @@ select ok(not exists (
   where n.nspname = 'app' and t.typtype in ('c', 'd', 'e', 'm', 'r')
     and has_type_privilege('anon', t.oid, 'USAGE')
 ), 'Catalog inventory confirms anon has no app type usage');
+
+select ok(
+  has_function_privilege('authenticated',
+    'app.get_newest_projection_snapshot_baseline(uuid)', 'EXECUTE')
+  and not has_function_privilege('anon',
+    'app.get_newest_projection_snapshot_baseline(uuid)', 'EXECUTE'),
+  'Only authenticated users may execute the recorded projection baseline RPC');
 
 select * from finish();
 rollback;
