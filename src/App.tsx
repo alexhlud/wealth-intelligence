@@ -9,6 +9,7 @@ import { ValueItemsPage } from '@/features/assets/ValueItemsPage'
 import { DashboardWithHistoryPage } from '@/features/history/DashboardWithHistoryPage'
 import { HistoryPage } from '@/features/history/HistoryPage'
 import { SnapshotsPage } from '@/features/snapshots/SnapshotsPage'
+import { FuturePage } from '@/features/projections/FuturePage'
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
                   <Route path="/assets" element={<ValueItemsPage kind="asset" />} />
                   <Route path="/liabilities" element={<ValueItemsPage kind="liability" />} />
                   <Route path="/snapshots" element={<SnapshotsPage />} />
+                  <Route path="/future" element={<FuturePage />} />
                   <Route path="/security" element={<SecurityPage />} />
                   <Route path="/portfolio" element={<Navigate to="/holdings" replace />} />
                 </Route>
