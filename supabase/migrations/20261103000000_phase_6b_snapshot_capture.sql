@@ -133,6 +133,9 @@ grant execute on function app.list_snapshot_capture_gaps(uuid) to authenticated;
 
 -- Dashboard setup must create the two Vault secrets before this migration is
 -- applied: snapshot_capture_url and snapshot_capture_scheduler_secret.
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
 select cron.schedule('snapshot-capture-weekdays', '*/15 * * * 1-5', $$
   select net.http_post(
     url := (select decrypted_secret from vault.decrypted_secrets where name = 'snapshot_capture_url'),
