@@ -9,6 +9,7 @@ export const snapshotSchema = z.object({
 })
 export const snapshotsSchema = z.array(snapshotSchema)
 export type RecordedSnapshot = z.infer<typeof snapshotSchema>
+const captureGapSchema = z.object({ as_of_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), reason: z.enum(['daily_close', 'position_change']), failure_category: z.string().nullable() })
 
 export type RecordedSnapshotDetailContractIssue = {
   path: string
@@ -51,6 +52,15 @@ export async function loadHistory(portfolioId: string, startDate: string | null)
   if (error) throw error
   const parsed = snapshotsSchema.safeParse(data)
   if (!parsed.success) throw new Error('Recorded history is unavailable')
+  return parsed.data
+}
+
+/** Returns only persisted missed sessions; it never derives a gap from current state. */
+export async function loadCaptureGaps(portfolioId: string) {
+  const { data, error } = await supabase.rpc('list_snapshot_capture_gaps', { p_portfolio_id: portfolioId })
+  if (error) throw error
+  const parsed = z.array(captureGapSchema).safeParse(data)
+  if (!parsed.success) throw new Error('Capture status is unavailable')
   return parsed.data
 }
 

@@ -23,6 +23,7 @@ function renderPage(path = '/history?date=2026-08-28', detailResponse: unknown =
   rpc.mockImplementation((name: string) => {
     if (name === 'ensure_primary_portfolio') return Promise.resolve({ data: portfolio, error: null })
     if (name === 'list_recorded_snapshot_history') return Promise.resolve({ data: snapshots, error: null })
+    if (name === 'list_snapshot_capture_gaps') return Promise.resolve({ data: [], error: null })
     return Promise.resolve({ data: detailResponse, error: null })
   })
   render(<MemoryRouter initialEntries={[path]}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><HistoryPage /></QueryClientProvider></MemoryRouter>)
@@ -44,6 +45,18 @@ describe('HistoryPage', () => {
     renderPage('/history?date=invalid')
     expect(await screen.findByText(/That date has no recorded snapshot/)).toBeTruthy()
     expect(screen.getByText('As of Sep 30, 2026')).toBeTruthy()
+  })
+
+  it('shows a persisted missed session as a backfill requirement without inventing a snapshot', async () => {
+    rpc.mockImplementation((name: string) => {
+      if (name === 'ensure_primary_portfolio') return Promise.resolve({ data: portfolio, error: null })
+      if (name === 'list_recorded_snapshot_history') return Promise.resolve({ data: snapshots, error: null })
+      if (name === 'list_snapshot_capture_gaps') return Promise.resolve({ data: [{ as_of_date: '2026-09-29', reason: 'daily_close', failure_category: 'price_unavailable' }], error: null })
+      return Promise.resolve({ data: detail, error: null })
+    })
+    render(<MemoryRouter initialEntries={['/history?date=2026-09-30']}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><HistoryPage /></QueryClientProvider></MemoryRouter>)
+    expect((await screen.findByRole('status', { name: 'Historical capture gaps' })).textContent).toMatch(/Historical capture gap\s+need backfill/)
+    expect(screen.getByText(/later current values will never fill this gap/i)).toBeTruthy()
   })
 
   it('distinguishes an unverifiable recorded-detail contract from a request failure', async () => {

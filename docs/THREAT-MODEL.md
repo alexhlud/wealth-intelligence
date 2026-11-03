@@ -182,3 +182,30 @@ exchange eligibility of a plausible but poisoned quote. Invite-only signup,
 known users, and no monetization are licensing prerequisites that depend on
 operator and Supabase dashboard enforcement; a change requires renewed written
 approval before live data remains enabled. See `MARKET-DATA-LICENSE.md`.
+## Phase 6b — scheduled snapshot capture
+
+The browser never invokes the automated capture worker. Supabase Cron calls the
+private `snapshot-capture` Edge Function every fifteen minutes on weekdays with
+a dedicated scheduler secret held in Supabase Vault and Edge Function Secrets.
+The function compares that secret in constant request scope, requires POST, and
+accepts only its own configured project origin. The secret is neither a VITE
+variable nor a repository value.
+
+The worker uses the service-role credential only to select a bounded portfolio
+batch and call two service-role-only RPCs. The capture queue is RLS-protected
+with no browser grants. The snapshot RPC validates that the portfolio belongs
+to the supplied user before temporarily establishing the verified owner
+identity for the existing Phase 2b atomic snapshot writer. It cannot accept a
+browser-supplied user identity.
+
+Each completed session attempt is persisted as `captured`, `skipped`, or
+`gap`. On a later worker run, sessions missed since the prior observed session
+are also persisted as `gap`; the UI directs the owner to historical backfill.
+No later quote, stale quote, or later current state can replace a gap. The
+accepted operational risk is that a paused project can miss a session: the
+product exposes this honestly rather than claiming automatic-history SLA.
+
+Logs contain only operation category, error class/code, and redacted message;
+they do not include balances, holdings, prices, tokens, or payloads. The NYSE
+table remains the source of truth, including its explicit 2027-12-31 expiry;
+the worker fails closed outside reviewed coverage.
