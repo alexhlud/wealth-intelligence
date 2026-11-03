@@ -18,6 +18,7 @@ npm run lint
 ## Rules that apply to every task
 
 - Money is Postgres NUMERIC. Never float. Format only at render.
+- Any RPC returning a financial value must cast it to text in an explicit projection. Never return NUMERIC through PostgREST and never rely on to_jsonb for a money column.
 - Identity comes from auth.uid(). Never trust a client-sent user_id.
 - Every user-owned table has RLS enabled and tested.
 - Postgres functions default to SECURITY INVOKER. SECURITY DEFINER
