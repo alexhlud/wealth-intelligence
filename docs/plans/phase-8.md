@@ -280,6 +280,9 @@ balance.
   assumption disclosures.
 - Actual liability amortization inputs/schedules, saved scenarios, projection
   drift, full FIRE modelling, and additional goal types.
+- Contribution schedules that change over time (for example, `$500/month` for
+  two years followed by `$1,500/month`) rather than one flat rate across the
+  full horizon.
 
 ## Size and proposed split
 
