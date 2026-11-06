@@ -4,6 +4,10 @@ import {
   getSessionsAfter,
 } from '../market-data/xnys-calendar.ts'
 import { buildSnapshot } from '../market-data/snapshot.ts'
+import {
+  response,
+  responseForCaptureSession,
+} from './response.ts'
 
 const projectUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -18,9 +22,7 @@ type AuthDiagnostics = {
   originMatchesProject: boolean
 }
 
-function response(status: number) {
-  return Response.json({ ok: status < 400 }, { status })
-}
+export { response, responseForCaptureSession }
 
 function originMatchesProject(request: Request) {
   try {
@@ -68,7 +70,7 @@ function logFailure(operation: string, error: unknown) {
   })
 }
 
-Deno.serve(async (request) => {
+export async function handler(request: Request) {
   const diagnostics = authorizationDiagnostics(request)
 
   if (!authorized(diagnostics)) {
@@ -82,8 +84,10 @@ Deno.serve(async (request) => {
 
   const session = getCurrentQuoteCaptureSession()
 
+  const noSessionResponse = responseForCaptureSession(session)
+
   if (session.kind !== 'session') {
-    return response(204)
+    return noSessionResponse!
   }
 
   const admin = createClient(projectUrl, serviceRoleKey, {
@@ -211,4 +215,8 @@ Deno.serve(async (request) => {
   }
 
   return response(200)
-})
+}
+
+if (import.meta.main) {
+  Deno.serve(handler)
+}
