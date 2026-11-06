@@ -10,7 +10,6 @@ import {
 } from './response.ts'
 
 const projectUrl = Deno.env.get('SUPABASE_URL') ?? ''
-const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const finnhubApiKey = Deno.env.get('FINNHUB_API_KEY') ?? ''
 const schedulerSecret = Deno.env.get('SNAPSHOT_CAPTURE_SCHEDULER_SECRET') ?? ''
 const batchSize = 20
@@ -22,7 +21,48 @@ type AuthDiagnostics = {
   originMatchesProject: boolean
 }
 
+type ServiceKey = {
+  source: 'SUPABASE_SECRET_KEYS' | 'SUPABASE_SERVICE_ROLE_KEY' | 'missing'
+  value: string
+}
+
 export { response, responseForCaptureSession }
+
+function readServiceKey(): ServiceKey {
+  const secretKeys = Deno.env.get('SUPABASE_SECRET_KEYS')
+
+  if (secretKeys !== undefined) {
+    try {
+      const parsed = JSON.parse(secretKeys) as Record<string, unknown>
+      const value = parsed.default
+
+      if (typeof value === 'string' && value) {
+        return { source: 'SUPABASE_SECRET_KEYS', value }
+      }
+
+      console.error('Snapshot capture worker configuration failure', {
+        reason: 'secret_key_default_missing',
+        serviceKeySource: 'SUPABASE_SECRET_KEYS',
+      })
+      return { source: 'missing', value: '' }
+    } catch (error) {
+      logFailure('read_secret_keys', error)
+      return { source: 'missing', value: '' }
+    }
+  }
+
+  const legacyServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+
+  if (legacyServiceRoleKey) {
+    return { source: 'SUPABASE_SERVICE_ROLE_KEY', value: legacyServiceRoleKey }
+  }
+
+  console.error('Snapshot capture worker configuration failure', {
+    reason: 'service_key_missing',
+    serviceKeySource: 'missing',
+  })
+  return { source: 'missing', value: '' }
+}
 
 function originMatchesProject(request: Request) {
   try {
@@ -70,6 +110,30 @@ function logFailure(operation: string, error: unknown) {
   })
 }
 
+function logPortfolioQuery(
+  serviceKeySource: ServiceKey['source'],
+  portfolios: { id: string; user_id: string }[] | null,
+  error: unknown,
+) {
+  const record = error && typeof error === 'object'
+    ? error as Record<string, unknown>
+    : {}
+
+  console.info('Snapshot capture portfolio query', {
+    serviceKeySource,
+    portfolioCount: portfolios?.length ?? 0,
+    error: error
+      ? {
+        errorClass: error instanceof Error ? error.name : typeof error,
+        code: typeof record.code === 'string' ? record.code : undefined,
+        message: String(record.message ?? error)
+          .replace(/\d+(?:\.\d+)?/g, '[redacted-number]')
+          .slice(0, 180),
+      }
+      : null,
+  })
+}
+
 export async function handler(request: Request) {
   const diagnostics = authorizationDiagnostics(request)
 
@@ -78,7 +142,19 @@ export async function handler(request: Request) {
     return response(401)
   }
 
-  if (!projectUrl || !serviceRoleKey || !finnhubApiKey) {
+  const serviceKey = readServiceKey()
+
+  console.info('Snapshot capture worker started', {
+    serviceKeySource: serviceKey.source,
+  })
+
+  if (!projectUrl || !serviceKey.value || !finnhubApiKey) {
+    console.error('Snapshot capture worker configuration unavailable', {
+      missingProjectUrl: !projectUrl,
+      missingServiceKey: !serviceKey.value,
+      missingFinnhubApiKey: !finnhubApiKey,
+      serviceKeySource: serviceKey.source,
+    })
     return response(503)
   }
 
@@ -90,7 +166,7 @@ export async function handler(request: Request) {
     return noSessionResponse!
   }
 
-  const admin = createClient(projectUrl, serviceRoleKey, {
+  const admin = createClient(projectUrl, serviceKey.value, {
     db: { schema: 'app' },
     auth: { persistSession: false, autoRefreshToken: false },
   })
@@ -99,8 +175,18 @@ export async function handler(request: Request) {
     .select('id,user_id')
     .limit(batchSize)
 
+  logPortfolioQuery(serviceKey.source, portfolios, error)
+
   if (error) {
     logFailure('list_portfolios', error)
+    return response(503)
+  }
+
+  if (!portfolios?.length) {
+    console.error('Snapshot capture no portfolios visible', {
+      serviceKeySource: serviceKey.source,
+      portfolioCount: 0,
+    })
     return response(503)
   }
 
