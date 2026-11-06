@@ -7,6 +7,7 @@ import { buildSnapshot } from '../market-data/snapshot.ts'
 import {
   response,
   responseForCaptureSession,
+  responseForCaptureResults,
 } from './response.ts'
 
 const projectUrl = Deno.env.get('SUPABASE_URL') ?? ''
@@ -26,7 +27,11 @@ type ServiceKey = {
   value: string
 }
 
-export { response, responseForCaptureSession }
+export {
+  response,
+  responseForCaptureSession,
+  responseForCaptureResults,
+}
 
 function readServiceKey(): ServiceKey {
   const secretKeys = Deno.env.get('SUPABASE_SECRET_KEYS')
@@ -190,6 +195,8 @@ export async function handler(request: Request) {
     return response(503)
   }
 
+  let completedPortfolioCount = 0
+
   for (const portfolio of portfolios ?? []) {
     try {
       const { data: previous } = await admin
@@ -224,7 +231,7 @@ export async function handler(request: Request) {
           .maybeSingle()
 
         if (!existing) {
-          await admin.rpc('record_snapshot_capture_session', {
+          const recorded = await admin.rpc('record_snapshot_capture_session', {
             p_user_id: portfolio.user_id,
             p_portfolio_id: portfolio.id,
             p_as_of_date: missed.asOfDate,
@@ -232,6 +239,10 @@ export async function handler(request: Request) {
             p_status: 'gap',
             p_failure_category: 'outside_capture_window',
           })
+
+          if (recorded.error) {
+            throw recorded.error
+          }
         }
       }
 
@@ -259,7 +270,7 @@ export async function handler(request: Request) {
           throw saved.error
         }
 
-        await admin.rpc('record_snapshot_capture_session', {
+        const recorded = await admin.rpc('record_snapshot_capture_session', {
           p_user_id: portfolio.user_id,
           p_portfolio_id: portfolio.id,
           p_as_of_date: session.asOfDate,
@@ -267,8 +278,12 @@ export async function handler(request: Request) {
           p_status: 'captured',
           p_failure_category: null,
         })
+
+        if (recorded.error) {
+          throw recorded.error
+        }
       } else if (built.result.kind === 'already_recorded') {
-        await admin.rpc('record_snapshot_capture_session', {
+        const recorded = await admin.rpc('record_snapshot_capture_session', {
           p_user_id: portfolio.user_id,
           p_portfolio_id: portfolio.id,
           p_as_of_date: session.asOfDate,
@@ -276,6 +291,10 @@ export async function handler(request: Request) {
           p_status: 'captured',
           p_failure_category: null,
         })
+
+        if (recorded.error) {
+          throw recorded.error
+        }
       } else if (built.result.kind !== 'already_recorded') {
         const failure = built.result.reason === 'price_unavailable'
           ? 'price_unavailable'
@@ -286,7 +305,7 @@ export async function handler(request: Request) {
           ? 'skipped'
           : 'gap'
 
-        await admin.rpc('record_snapshot_capture_session', {
+        const recorded = await admin.rpc('record_snapshot_capture_session', {
           p_user_id: portfolio.user_id,
           p_portfolio_id: portfolio.id,
           p_as_of_date: session.asOfDate,
@@ -294,13 +313,19 @@ export async function handler(request: Request) {
           p_status: status,
           p_failure_category: status === 'gap' ? failure : null,
         })
+
+        if (recorded.error) {
+          throw recorded.error
+        }
       }
+
+      completedPortfolioCount += 1
     } catch (failure) {
       logFailure('capture_portfolio', failure)
     }
   }
 
-  return response(200)
+  return responseForCaptureResults(completedPortfolioCount)
 }
 
 if (import.meta.main) {

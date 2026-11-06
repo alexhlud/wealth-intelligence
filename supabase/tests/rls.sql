@@ -494,6 +494,37 @@ select ok(
     'EXECUTE'),
   'authenticated can execute both position write RPCs');
 select ok(
+  has_function_privilege('service_role',
+    'app.record_snapshot_capture_session(uuid,uuid,date,text,text,text)',
+    'EXECUTE') and
+  has_function_privilege('service_role',
+    'app.create_scheduled_portfolio_snapshot(uuid,uuid,date,timestamptz,text,jsonb,jsonb,jsonb,uuid)',
+    'EXECUTE'),
+  'service_role can execute both snapshot-capture worker RPCs');
+select ok(not exists (
+  select 1
+  from pg_catalog.pg_proc p
+  join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+  cross join lateral pg_catalog.aclexplode(
+    coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
+  ) privilege
+  where n.nspname = 'app'
+    and p.oid in (
+      'app.record_snapshot_capture_session(uuid,uuid,date,text,text,text)'::regprocedure,
+      'app.create_scheduled_portfolio_snapshot(uuid,uuid,date,timestamptz,text,jsonb,jsonb,jsonb,uuid)'::regprocedure
+    )
+    and privilege.grantee = 0
+    and privilege.privilege_type = 'EXECUTE'
+), 'public cannot execute snapshot-capture worker RPCs');
+select ok(
+  not has_function_privilege('anon',
+    'app.record_snapshot_capture_session(uuid,uuid,date,text,text,text)',
+    'EXECUTE') and
+  not has_function_privilege('anon',
+    'app.create_scheduled_portfolio_snapshot(uuid,uuid,date,timestamptz,text,jsonb,jsonb,jsonb,uuid)',
+    'EXECUTE'),
+  'anon cannot execute snapshot-capture worker RPCs');
+select ok(
   not has_function_privilege('authenticated', 'app.set_updated_at()', 'EXECUTE') and
   not has_function_privilege('authenticated', 'app.reject_history_mutation()', 'EXECUTE') and
   not has_function_privilege('authenticated', 'app.validate_profile_timezone()', 'EXECUTE') and
