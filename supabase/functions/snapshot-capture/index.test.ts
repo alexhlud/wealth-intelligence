@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   response,
   responseForCaptureSession,
+  responseForCaptureResults,
 } from './response.ts'
 
 describe('snapshot capture responses', () => {
@@ -21,5 +22,10 @@ describe('snapshot capture responses', () => {
 
     expect(result?.status).toBe(204)
     expect(result?.body).toBeNull()
+  })
+
+  it('returns a failure when every portfolio capture fails', () => {
+    expect(responseForCaptureResults(0).status).toBe(503)
+    expect(responseForCaptureResults(1).status).toBe(200)
   })
 })

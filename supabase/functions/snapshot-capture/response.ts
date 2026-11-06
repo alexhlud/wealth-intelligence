@@ -15,3 +15,7 @@ export function response(status: number) {
 export function responseForCaptureSession(session: CaptureSession) {
   return session.kind === 'session' ? null : response(204)
 }
+
+export function responseForCaptureResults(completedPortfolioCount: number) {
+  return response(completedPortfolioCount > 0 ? 200 : 503)
+}
