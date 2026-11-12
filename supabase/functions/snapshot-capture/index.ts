@@ -139,28 +139,106 @@ function logPortfolioQuery(
   })
 }
 
+function createAdminClient(serviceKey: ServiceKey) {
+  if (!projectUrl || !serviceKey.value) {
+    return null
+  }
+
+  return createClient(projectUrl, serviceKey.value, {
+    db: { schema: 'app' },
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+}
+
+async function recordRejectedAuthorization(diagnostics: AuthDiagnostics) {
+  const serviceKey = readServiceKey()
+  const admin = createAdminClient(serviceKey)
+
+  if (!admin) {
+    logFailure('record_scheduler_auth_failure', new Error('service client unavailable'))
+    return
+  }
+
+  const { error } = await admin.rpc('record_scheduler_auth_failure', {
+    p_method: diagnostics.method,
+    p_secret_length: diagnostics.secretLength,
+    p_token_matched: diagnostics.tokenMatched,
+    p_origin_matched: diagnostics.originMatchesProject,
+  })
+
+  if (error) {
+    logFailure('record_scheduler_auth_failure', error)
+  }
+}
+
+async function recordInvocation(
+  admin: ReturnType<typeof createAdminClient>,
+  captured: boolean,
+) {
+  if (!admin) {
+    logFailure('record_scheduler_invocation', new Error('service client unavailable'))
+    return
+  }
+
+  const { error } = await admin.rpc('record_scheduler_invocation', {
+    p_captured: captured,
+  })
+
+  if (error) {
+    logFailure('record_scheduler_invocation', error)
+  }
+}
+
+async function hasCapturedEveryPortfolio(
+  admin: NonNullable<ReturnType<typeof createAdminClient>>,
+  portfolios: { id: string }[],
+  marketCloseAt: string,
+) {
+  const { data, error } = await admin
+    .from('portfolio_snapshots')
+    .select('portfolio_id')
+    .in('portfolio_id', portfolios.map((portfolio) => portfolio.id))
+    .eq('market_close_at', marketCloseAt)
+    .is('corrects_snapshot_id', null)
+
+  if (error) {
+    logFailure('verify_scheduler_capture', error)
+    return false
+  }
+
+  return new Set(data?.map((snapshot) => snapshot.portfolio_id)).size
+    === portfolios.length
+}
+
 export async function handler(request: Request) {
   const diagnostics = authorizationDiagnostics(request)
 
   if (!authorized(diagnostics)) {
     logRejectedAuthorization(diagnostics)
+    await recordRejectedAuthorization(diagnostics)
     return response(401)
   }
 
   const serviceKey = readServiceKey()
+  const admin = createAdminClient(serviceKey)
+
+  async function finish(result: Response, captured: boolean) {
+    await recordInvocation(admin, captured)
+    return result
+  }
 
   console.info('Snapshot capture worker started', {
     serviceKeySource: serviceKey.source,
   })
 
-  if (!projectUrl || !serviceKey.value || !finnhubApiKey) {
+  if (!projectUrl || !serviceKey.value || !finnhubApiKey || !admin) {
     console.error('Snapshot capture worker configuration unavailable', {
       missingProjectUrl: !projectUrl,
       missingServiceKey: !serviceKey.value,
       missingFinnhubApiKey: !finnhubApiKey,
       serviceKeySource: serviceKey.source,
     })
-    return response(503)
+    return finish(response(503), false)
   }
 
   const session = getCurrentQuoteCaptureSession()
@@ -168,13 +246,9 @@ export async function handler(request: Request) {
   const noSessionResponse = responseForCaptureSession(session)
 
   if (session.kind !== 'session') {
-    return noSessionResponse!
+    return finish(noSessionResponse!, false)
   }
 
-  const admin = createClient(projectUrl, serviceKey.value, {
-    db: { schema: 'app' },
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
   const { data: portfolios, error } = await admin
     .from('portfolios')
     .select('id,user_id')
@@ -184,7 +258,7 @@ export async function handler(request: Request) {
 
   if (error) {
     logFailure('list_portfolios', error)
-    return response(503)
+    return finish(response(503), false)
   }
 
   if (!portfolios?.length) {
@@ -192,7 +266,7 @@ export async function handler(request: Request) {
       serviceKeySource: serviceKey.source,
       portfolioCount: 0,
     })
-    return response(503)
+    return finish(response(503), false)
   }
 
   let completedPortfolioCount = 0
@@ -325,7 +399,13 @@ export async function handler(request: Request) {
     }
   }
 
-  return responseForCaptureResults(completedPortfolioCount)
+  const captured = await hasCapturedEveryPortfolio(
+    admin,
+    portfolios,
+    session.marketCloseAt,
+  )
+
+  return finish(responseForCaptureResults(completedPortfolioCount), captured)
 }
 
 if (import.meta.main) {

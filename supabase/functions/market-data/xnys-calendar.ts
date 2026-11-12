@@ -1,6 +1,10 @@
 /**
  * XNYS core-session calendar, reviewed 2026-10-24.
  *
+ * The trading calendar currently exists here, in app.xnys_sessions, and in
+ * historical-backfill SQL. app.xnys_sessions is the designated source of
+ * truth; this Edge calendar is pending consolidation.
+ *
  * Source: NYSE Group, “2026, 2027 and 2028 Holiday and Early Closings
  * Calendar”, https://ir.theice.com/press/news-details/2025/
  * NYSE-Group-Announces-2026-2027-and-2028-Holiday-and-Early-Closings-Calendar/
@@ -23,7 +27,7 @@ const FULL_HOLIDAYS = new Set([
 
 const EARLY_CLOSES = new Set([
   '2026-11-27', '2026-12-24',
-  '2027-07-02', '2027-11-26', '2027-12-23',
+  '2027-11-26',
 ])
 
 export type XnysSession = {

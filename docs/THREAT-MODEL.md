@@ -209,3 +209,25 @@ Logs contain only operation category, error class/code, and redacted message;
 they do not include balances, holdings, prices, tokens, or payloads. The NYSE
 table remains the source of truth, including its explicit 2027-12-31 expiry;
 the worker fails closed outside reviewed coverage.
+
+## Phase 6c-2 — scheduler health boundary
+
+`app.scheduler_health` is a one-row operational record with RLS enabled and
+forced, no table policies, and no browser table privileges. Only two
+service-role-gated `SECURITY DEFINER` mutation RPCs can record safe scheduler
+diagnostics and capture health. `created_at` is written only by the migration
+seed; it is not mutable through worker paths.
+
+The only authenticated read path is the narrow `SECURITY DEFINER`
+`app.get_scheduler_health_status()` RPC. It requires `auth.uid()` and returns
+only a boolean alert and the first missing completed XNYS-session close. It
+cannot disclose health-table timestamps, counts, authentication diagnostics,
+tokens, URLs, or financial facts. A `SECURITY INVOKER` read was rejected:
+forced RLS with no browser policy or table grant intentionally makes the table
+unreadable to an invoker.
+
+The alert detects two completed XNYS sessions without a confirmed capture,
+including when Cron never invokes the worker. It remains an availability
+signal, not proof of data correctness or a replacement for operational
+monitoring. Service-role credentials and database-owner access remain outside
+RLS and require separate operational controls.

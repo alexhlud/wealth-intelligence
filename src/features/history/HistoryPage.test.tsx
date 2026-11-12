@@ -19,11 +19,16 @@ const recordedPositions = [
   { source_position_id: null, account_label: 'Brokerage', symbol: 'VOO', security_name: 'Vanguard S&P 500 ETF', asset_type: 'etf', quantity: '20.500000000000', average_cost: '500.00000000', market_price: '550.00000000', price_at: '2026-09-30T20:00:00.000Z', market_value: '11275.00000000', cost_basis: '10250.00000000', unrealized_gain: '1025.00000000', portfolio_weight: '0.522969775254', price_source: 'user supplied manual price', price_kind: 'manual' },
 ]
 
-function renderPage(path = '/history?date=2026-08-28', detailResponse: unknown = detail) {
+function renderPage(
+  path = '/history?date=2026-08-28',
+  detailResponse: unknown = detail,
+  schedulerHealthResponse: unknown = [{ alert: false, alert_since: null }],
+) {
   rpc.mockImplementation((name: string) => {
     if (name === 'ensure_primary_portfolio') return Promise.resolve({ data: portfolio, error: null })
     if (name === 'list_recorded_snapshot_history') return Promise.resolve({ data: snapshots, error: null })
     if (name === 'list_snapshot_capture_gaps') return Promise.resolve({ data: [], error: null })
+    if (name === 'get_scheduler_health_status') return Promise.resolve({ data: schedulerHealthResponse, error: null })
     return Promise.resolve({ data: detailResponse, error: null })
   })
   render(<MemoryRouter initialEntries={[path]}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><HistoryPage /></QueryClientProvider></MemoryRouter>)
@@ -45,6 +50,43 @@ describe('HistoryPage', () => {
     renderPage('/history?date=invalid')
     expect(await screen.findByText(/That date has no recorded snapshot/)).toBeTruthy()
     expect(screen.getByText('As of Sep 30, 2026')).toBeTruthy()
+  })
+
+  it('shows the operational notice when automated capture needs repair', async () => {
+    renderPage(
+      '/history?date=2026-09-30',
+      detail,
+      [{ alert: true, alert_since: '2026-09-29T20:00:00.000Z' }],
+    )
+    const notice = await screen.findByRole('status', {
+      name: 'Automated snapshot capture needs repair',
+    })
+    expect(notice.textContent).toMatch(/automated snapshot capture has not run/i)
+    expect(screen.getByText(/saving or backfilling snapshots still works normally/i)).toBeTruthy()
+  })
+
+  it('does not show the operational notice when automated capture is healthy', async () => {
+    renderPage()
+    expect(await screen.findByText('As of Aug 28, 2026')).toBeTruthy()
+    expect(screen.queryByRole('status', {
+      name: 'Automated snapshot capture needs repair',
+    })).toBeNull()
+  })
+
+  it('keeps recorded history accessible when the health-status query fails', async () => {
+    rpc.mockImplementation((name: string) => {
+      if (name === 'ensure_primary_portfolio') return Promise.resolve({ data: portfolio, error: null })
+      if (name === 'list_recorded_snapshot_history') return Promise.resolve({ data: snapshots, error: null })
+      if (name === 'list_snapshot_capture_gaps') return Promise.resolve({ data: [], error: null })
+      if (name === 'get_scheduler_health_status') return Promise.resolve({ data: null, error: new Error('Unavailable') })
+      return Promise.resolve({ data: detail, error: null })
+    })
+    render(<MemoryRouter initialEntries={['/history?date=2026-09-30']}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><HistoryPage /></QueryClientProvider></MemoryRouter>)
+    expect(await screen.findByText('As of Sep 30, 2026')).toBeTruthy()
+    expect(await screen.findByText('Recorded composition')).toBeTruthy()
+    expect(screen.queryByRole('status', {
+      name: 'Automated snapshot capture needs repair',
+    })).toBeNull()
   })
 
   it('shows a persisted missed session as a backfill requirement without inventing a snapshot', async () => {

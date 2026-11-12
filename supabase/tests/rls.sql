@@ -466,7 +466,7 @@ select ok(not exists (
 select is((select count(*) from pg_catalog.pg_proc p
            join pg_catalog.pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'app' and p.prosecdef),
-  9::bigint, 'The approved write RPCs, MFA helper, and snapshot-capture internals are SECURITY DEFINER');
+  12::bigint, 'The approved write RPCs, MFA helper, and scheduler-health boundary are SECURITY DEFINER');
 select ok(not exists (
   select 1 from pg_catalog.pg_proc p
   join pg_catalog.pg_namespace n on n.oid = p.pronamespace
@@ -499,8 +499,12 @@ select ok(
     'EXECUTE') and
   has_function_privilege('service_role',
     'app.create_scheduled_portfolio_snapshot(uuid,uuid,date,timestamptz,text,jsonb,jsonb,jsonb,uuid)',
-    'EXECUTE'),
-  'service_role can execute both snapshot-capture worker RPCs');
+    'EXECUTE') and
+  has_function_privilege('service_role',
+    'app.record_scheduler_auth_failure(text,integer,boolean,boolean)', 'EXECUTE') and
+  has_function_privilege('service_role',
+    'app.record_scheduler_invocation(boolean)', 'EXECUTE'),
+  'service_role can execute all snapshot-capture worker RPCs');
 select ok(not exists (
   select 1
   from pg_catalog.pg_proc p
@@ -511,7 +515,9 @@ select ok(not exists (
   where n.nspname = 'app'
     and p.oid in (
       'app.record_snapshot_capture_session(uuid,uuid,date,text,text,text)'::regprocedure,
-      'app.create_scheduled_portfolio_snapshot(uuid,uuid,date,timestamptz,text,jsonb,jsonb,jsonb,uuid)'::regprocedure
+      'app.create_scheduled_portfolio_snapshot(uuid,uuid,date,timestamptz,text,jsonb,jsonb,jsonb,uuid)'::regprocedure,
+      'app.record_scheduler_auth_failure(text,integer,boolean,boolean)'::regprocedure,
+      'app.record_scheduler_invocation(boolean)'::regprocedure
     )
     and privilege.grantee = 0
     and privilege.privilege_type = 'EXECUTE'
@@ -524,6 +530,115 @@ select ok(
     'app.create_scheduled_portfolio_snapshot(uuid,uuid,date,timestamptz,text,jsonb,jsonb,jsonb,uuid)',
     'EXECUTE'),
   'anon cannot execute snapshot-capture worker RPCs');
+select ok((select c.relrowsecurity and c.relforcerowsecurity
+           from pg_catalog.pg_class c
+           join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+           where n.nspname = 'app' and c.relname = 'scheduler_health'),
+  'scheduler health has RLS enabled and forced');
+select ok((select c.relrowsecurity and c.relforcerowsecurity
+           from pg_catalog.pg_class c
+           join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+           where n.nspname = 'app' and c.relname = 'xnys_sessions'),
+  'XNYS sessions have RLS enabled and forced');
+select is((select count(*) from pg_catalog.pg_policy p
+           join pg_catalog.pg_class c on c.oid = p.polrelid
+           join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+           where n.nspname = 'app' and c.relname = 'scheduler_health'),
+  0::bigint, 'scheduler health has no direct table policies');
+select is((select count(*) from pg_catalog.pg_policy p
+           join pg_catalog.pg_class c on c.oid = p.polrelid
+           join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+           where n.nspname = 'app' and c.relname = 'xnys_sessions'),
+  0::bigint, 'XNYS sessions have no direct table policies');
+select is((select count(*) from app.xnys_sessions
+           where as_of_date between date '2027-01-01' and date '2027-12-31'
+             and (market_close_at at time zone 'America/New_York')::time = time '13:00:00'),
+  1::bigint, '2027 has exactly one XNYS early close');
+select is((select as_of_date from app.xnys_sessions
+           where as_of_date between date '2027-01-01' and date '2027-12-31'
+             and (market_close_at at time zone 'America/New_York')::time = time '13:00:00'),
+  date '2027-11-26', '2027 XNYS early close is the day after Thanksgiving');
+select ok(
+  not has_table_privilege('anon', 'app.scheduler_health', 'SELECT')
+  and not has_table_privilege('authenticated', 'app.scheduler_health', 'SELECT'),
+  'browser roles cannot read scheduler health directly');
+select ok(
+  has_function_privilege('service_role',
+    'app.record_scheduler_auth_failure(text,integer,boolean,boolean)', 'EXECUTE')
+  and has_function_privilege('service_role',
+    'app.record_scheduler_invocation(boolean)', 'EXECUTE')
+  and has_function_privilege('authenticated',
+    'app.get_scheduler_health_status()', 'EXECUTE'),
+  'scheduler health RPC grants are role-specific');
+
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+set local role authenticated;
+select throws_ok($$select app.record_scheduler_auth_failure('POST', 48, true, true)$$,
+  '42501', null, 'authenticated cannot record scheduler authentication failures');
+select throws_ok($$select app.record_scheduler_invocation(false)$$,
+  '42501', null, 'authenticated cannot record scheduler invocations');
+select lives_ok($$select * from app.get_scheduler_health_status()$$,
+  'authenticated can read the minimal scheduler health status');
+reset role;
+
+select set_config('request.jwt.claim.role', 'anon', true);
+select set_config('request.jwt.claim.sub', '', true);
+set local role anon;
+select throws_ok($$select * from app.get_scheduler_health_status()$$,
+  '42501', null, 'anon cannot execute scheduler health status');
+select throws_ok($$select app.record_scheduler_invocation(false)$$,
+  '42501', null, 'anon cannot record scheduler invocations');
+reset role;
+
+select set_config('request.jwt.claim.role', 'service_role', true);
+select set_config('request.jwt.claim.sub', '', true);
+set local role service_role;
+select lives_ok($$select app.record_scheduler_invocation(true)$$,
+  'service role records a successful scheduler capture');
+reset role;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+set local role authenticated;
+select is((select count(*) from app.get_scheduler_health_status()), 1::bigint,
+  'scheduler health status returns one row');
+reset role;
+select is(
+  pg_catalog.pg_get_function_result('app.get_scheduler_health_status()'::regprocedure),
+  'TABLE(alert boolean, alert_since timestamp with time zone)',
+  'scheduler health status declares only alert fields'
+);
+
+update app.scheduler_health
+set last_capture_at = '2026-10-01 20:00+00'::timestamptz;
+select set_config('request.jwt.claim.role', 'service_role', true);
+set local role service_role;
+select lives_ok($$select app.record_scheduler_invocation(false)$$,
+  'service role records a zero-capture invocation');
+reset role;
+select is((select last_capture_at from app.scheduler_health),
+  '2026-10-01 20:00+00'::timestamptz,
+  'zero-capture invocation does not advance the last capture time');
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+set local role authenticated;
+select ok((select alert from app.get_scheduler_health_status()),
+  'two completed XNYS sessions without capture raise the alert');
+select is((select alert_since from app.get_scheduler_health_status()),
+  '2026-10-02 20:00+00'::timestamptz,
+  'alert starts at the first completed session without capture');
+reset role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+set local role service_role;
+select lives_ok($$select app.record_scheduler_invocation(true)$$,
+  'service role clears stale health after confirmed capture');
+reset role;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+set local role authenticated;
+select ok(not (select alert from app.get_scheduler_health_status()),
+  'alert is false immediately after a confirmed capture');
+reset role;
 select ok(
   not has_function_privilege('authenticated', 'app.set_updated_at()', 'EXECUTE') and
   not has_function_privilege('authenticated', 'app.reject_history_mutation()', 'EXECUTE') and
@@ -639,6 +754,39 @@ select is((select count(*) from pg_catalog.pg_policy p
            join pg_catalog.pg_namespace n on n.oid = c.relnamespace
            where n.nspname = 'app' and c.relname in ('quote_cache', 'market_data_refresh_rate_windows')),
   0::bigint, 'quote cache and rate counter expose no direct RLS policies');
+
+delete from app.xnys_sessions
+where as_of_date > date '2026-01-06';
+update app.scheduler_health
+set last_capture_at = (
+  select pg_catalog.max(market_close_at)
+  from app.xnys_sessions
+);
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+set local role authenticated;
+select ok((select alert from app.get_scheduler_health_status()),
+  'exhausted XNYS calendar coverage raises the health alert');
+select is((select alert_since from app.get_scheduler_health_status()),
+  '2026-01-06 21:00+00'::timestamptz,
+  'exhausted coverage reports the final covered session close');
+reset role;
+
+update app.scheduler_health
+set last_capture_at = (
+  select market_close_at
+  from app.xnys_sessions
+  where as_of_date = date '2026-01-02'
+);
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+set local role authenticated;
+select ok((select alert from app.get_scheduler_health_status()),
+  'exhausted coverage remains alerting when captures are also missing');
+select is((select alert_since from app.get_scheduler_health_status()),
+  '2026-01-05 21:00+00'::timestamptz,
+  'missing sessions take precedence over the exhausted-coverage boundary');
+reset role;
 
 select * from finish();
 rollback;

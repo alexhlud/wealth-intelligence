@@ -10,6 +10,18 @@ describe('XNYS annual table', () => {
     expect(getXnysSession('2026-11-27')).toEqual({ kind: 'session', asOfDate: '2026-11-27', closeTimeEt: '13:00', marketCloseAt: '2026-11-27T18:00:00.000Z' })
   })
 
+  it('has exactly one 2027 early close', () => {
+    const earlyCloses = Array.from({ length: 365 }, (_, index) => {
+      const date = new Date(Date.UTC(2027, 0, index + 1))
+      return date.toISOString().slice(0, 10)
+    }).filter((date) => {
+      const session = getXnysSession(date)
+      return session.kind === 'session' && session.closeTimeEt === '13:00'
+    })
+
+    expect(earlyCloses).toEqual(['2027-11-26'])
+  })
+
   it('rejects an NYSE holiday', () => {
     expect(getXnysSession('2027-11-25')).toEqual({ kind: 'non_session', asOfDate: '2027-11-25', reason: 'holiday' })
   })
