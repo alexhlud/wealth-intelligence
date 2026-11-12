@@ -52,6 +52,31 @@ enable both in **Database → Extensions** before running `supabase db push`.
    gap. Use the existing Add Historical Snapshot flow; do not use current
    holdings to fill it.
 
+## Scheduler-health alert
+
+Portfolio Time Machine shows an operational alert after two completed XNYS
+sessions pass without a confirmed automated capture. The alert is global
+system-health information; it does not reveal scheduler credentials, requests,
+or financial data.
+
+Possible causes include a rejected scheduler authorization, an authorized
+worker failure after authorization, a zero-portfolio worker result, one or
+more expected portfolios still lacking that session's snapshot, `pg_cron` not
+firing, provider or storage failures, and exhausted committed XNYS calendar
+coverage. The worker fails closed outside reviewed calendar coverage, so an
+expired calendar eventually produces this alert.
+
+The committed calendar ends on **2027-12-31**. Extend it from NYSE's published
+holiday and early-close calendar before that date. Once coverage is exhausted,
+the worker fails closed and the health alert fires even if there are no later
+calendar rows to count.
+
+Inspect Cron job history and the Edge Function's safe logs, then repair the
+underlying cause. The next successful capture that confirms snapshots for every
+expected portfolio clears the alert automatically. There is no manual reset.
+Saving a snapshot or adding a historical backfill remains available while the
+alert is displayed.
+
 ## Rotation
 
 Generate a new random value, update the Edge Function secret, then update the

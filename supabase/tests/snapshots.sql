@@ -856,7 +856,7 @@ select ok(
 select is((select count(*) from pg_catalog.pg_proc as p
            join pg_catalog.pg_namespace as n on n.oid = p.pronamespace
            where n.nspname = 'app' and p.prosecdef),
-  9::bigint, 'The approved write RPCs, MFA helper, and snapshot-capture internals are SECURITY DEFINER');
+  12::bigint, 'The approved write RPCs, MFA helper, and scheduler-health boundary are SECURITY DEFINER');
 select ok(not exists (
   select 1 from pg_catalog.pg_proc as p
   join pg_catalog.pg_namespace as n on n.oid = p.pronamespace

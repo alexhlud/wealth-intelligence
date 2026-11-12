@@ -11,6 +11,10 @@ export const snapshotSchema = z.object({
 export const snapshotsSchema = z.array(snapshotSchema)
 export type RecordedSnapshot = z.infer<typeof snapshotSchema>
 const captureGapSchema = z.object({ as_of_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), reason: z.enum(['daily_close', 'position_change']), failure_category: z.string().nullable() })
+const schedulerHealthStatusSchema = z.object({
+  alert: z.boolean(),
+  alert_since: z.string().min(1).nullable(),
+}).strict()
 
 export type RecordedSnapshotDetailContractIssue = SanitizedZodContractIssue
 
@@ -59,6 +63,16 @@ export async function loadCaptureGaps(portfolioId: string) {
   const parsed = z.array(captureGapSchema).safeParse(data)
   if (!parsed.success) throw new Error('Capture status is unavailable')
   return parsed.data
+}
+
+export async function loadSchedulerHealthStatus() {
+  const { data, error } = await supabase.rpc('get_scheduler_health_status')
+  if (error) throw error
+  const parsed = z.array(schedulerHealthStatusSchema).safeParse(data)
+  if (!parsed.success || parsed.data.length !== 1) {
+    throw new Error('Scheduler health status is unavailable')
+  }
+  return parsed.data[0]
 }
 
 export async function loadSnapshotDetail(portfolioId: string, snapshotId: string) {
