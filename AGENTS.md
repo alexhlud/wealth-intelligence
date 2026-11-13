@@ -30,6 +30,9 @@ npm run lint
 - No dangerouslySetInnerHTML, eval, or new Function. Ever.
 - No secrets in VITE_* vars, client code, or committed files.
 - Timestamps stored UTC.
+- Never build a `datetime-local` input value from `toISOString()` because it
+  emits a UTC clock time that the control reads as local; use
+  `src/lib/datetimeLocal.ts` instead.
 - History is immutable. Never rewrite a snapshot or position event.
 - A client error handler must not map distinct server failures to one specific
   message. When the cause cannot safely be shown, use a generic but true message.

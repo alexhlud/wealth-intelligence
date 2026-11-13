@@ -83,7 +83,7 @@ async function load() {
   const portfolio = portfolioResponseSchema.parse([ensured.data])[0]!
   const [accounts, positions, assets, liabilities, snapshot] = await Promise.all([
     supabase.from('accounts').select('id, portfolio_id, name, institution_name, account_type, include_in_net_worth, currency_code').eq('portfolio_id', portfolio.id),
-    supabase.from('positions').select('id, account_id, symbol, security_name, asset_type, status, quantity, average_cost').eq('portfolio_id', portfolio.id).eq('status', 'open'),
+    supabase.from('positions').select('id, account_id, symbol, security_name, asset_type, status, quantity, average_cost, last_event_at').eq('portfolio_id', portfolio.id).eq('status', 'open'),
     supabase.from('manual_assets').select('*').eq('portfolio_id', portfolio.id),
     supabase.from('liabilities').select('*').eq('portfolio_id', portfolio.id),
     supabase.rpc('get_newest_projection_snapshot_baseline', { p_portfolio_id: portfolio.id }),

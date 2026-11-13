@@ -13,7 +13,7 @@ async function load() {
   const portfolio = portfolioResponseSchema.parse([data])[0]!
   const [accounts, positions, assets, liabilities] = await Promise.all([
     supabase.from('accounts').select('id, portfolio_id, name, institution_name, account_type, include_in_net_worth, currency_code').eq('portfolio_id', portfolio.id).order('created_at'),
-    supabase.from('positions').select('id, account_id, symbol, security_name, asset_type, status, quantity, average_cost').eq('portfolio_id', portfolio.id).eq('status', 'open').order('created_at'),
+    supabase.from('positions').select('id, account_id, symbol, security_name, asset_type, status, quantity, average_cost, last_event_at').eq('portfolio_id', portfolio.id).eq('status', 'open').order('created_at'),
     supabase.from('manual_assets').select('*').eq('portfolio_id', portfolio.id).order('created_at'),
     supabase.from('liabilities').select('*').eq('portfolio_id', portfolio.id).order('created_at'),
   ])

@@ -67,6 +67,7 @@ const openPositionResponseRowSchema = z.object({
   id: z.string().uuid(), account_id: z.string().uuid(), symbol: z.string().regex(/^[A-Z][A-Z0-9.-]{0,9}$/),
   security_name: z.string().trim().min(1).max(120), asset_type: z.enum(['stock', 'etf', 'mutual_fund', 'bond', 'crypto', 'cash_equivalent', 'other']),
   status: z.literal('open'), quantity: postgrestDecimal, average_cost: postgrestDecimal,
+  last_event_at: z.string().datetime({ offset: true }).optional(),
 })
 export const openPositionResponseSchema = z.array(openPositionResponseRowSchema)
 export type OpenPositionResponse = z.infer<typeof openPositionResponseRowSchema>

@@ -238,4 +238,13 @@ describe('HoldingsPage account filters', () => {
       p_account_id: accountA, p_symbol: 'QQQ', p_quantity: '20.5', p_average_cost: '400',
     })))
   })
+
+  it('uses the chronological SQLSTATE rather than the server message for edit feedback', async () => {
+    renderHoldings()
+    fireEvent.click(await screen.findAllByRole('button', { name: 'Edit' }).then((buttons) => buttons[0]!))
+    rpc.mockResolvedValueOnce({ error: { code: 'P5001', message: 'Changed server wording' } } as never)
+    fireEvent.click(screen.getByRole('button', { name: 'Save position' }))
+
+    expect(await screen.findByText('The effective date and time cannot be earlier than the most recently recorded position event.')).toBeTruthy()
+  })
 })

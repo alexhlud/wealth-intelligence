@@ -833,5 +833,76 @@ select is((select alert_since from app.get_scheduler_health_status()),
   'missing sessions take precedence over the exhausted-coverage boundary');
 reset role;
 
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+select set_config('request.jwt.claim.aal', 'aal2', true);
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated","aal":"aal2"}', true);
+set local role authenticated;
+select lives_ok($$select * from app.create_position(
+  (select id from test_ids where name = 'user_a_portfolio'),
+  (select id from test_ids where name = 'user_a_brokerage'),
+  'TIME', 'Timestamp test fund', 'etf', 1, 1,
+  pg_catalog.now() + interval '5 minutes', null,
+  'aaaaaaaa-0000-0000-0000-000000000201')$$,
+  'create_position accepts an occurred_at exactly five minutes ahead');
+select throws_ok($$select * from app.create_position(
+  (select id from test_ids where name = 'user_a_portfolio'),
+  (select id from test_ids where name = 'user_a_brokerage'),
+  'FUTR', 'Future timestamp fund', 'etf', 1, 1,
+  pg_catalog.now() + interval '6 minutes', null,
+  'aaaaaaaa-0000-0000-0000-000000000202')$$,
+  '22008', 'Timestamp cannot be more than five minutes in the future',
+  'create_position rejects a future occurred_at with its dedicated code');
+select throws_ok($$select * from app.edit_position(
+  (select id from app.positions where symbol = 'TIME'), 'manual_adjustment',
+  null, null, null, null, 2, 1, null, null, null,
+  pg_catalog.now() + interval '6 minutes', null,
+  'aaaaaaaa-0000-0000-0000-000000000203')$$,
+  '22008', 'Timestamp cannot be more than five minutes in the future',
+  'edit_position rejects a future occurred_at with its dedicated code');
+select lives_ok($$select * from app.edit_position(
+  (select id from app.positions where symbol = 'TIME'), 'manual_adjustment',
+  null, null, null, null, 2, 1, null, null, null,
+  pg_catalog.now() + interval '5 minutes', null,
+  'aaaaaaaa-0000-0000-0000-000000000204')$$,
+  'edit_position accepts an occurred_at exactly five minutes ahead');
+select throws_ok($$select * from app.edit_position(
+  (select id from app.positions where symbol = 'TIME'), 'manual_adjustment',
+  null, null, null, null, 3, 1, null, null, null,
+  pg_catalog.now() + interval '4 minutes', null,
+  'aaaaaaaa-0000-0000-0000-000000000206')$$,
+  'P5001', 'Position event cannot precede the most recently recorded event',
+  'edit_position distinguishes chronological rejection');
+select throws_ok($$select * from app.create_position(
+  (select id from test_ids where name = 'user_a_portfolio'),
+  (select id from test_ids where name = 'user_a_brokerage'),
+  'PAST', 'Past timestamp fund', 'etf', 1, 1,
+  '1900-01-01 00:00+00', null,
+  'aaaaaaaa-0000-0000-0000-000000000205')$$,
+  '22023', 'Invalid position intent', 'create_position rejects a pre-1970 occurred_at');
+select throws_ok($$insert into app.manual_assets
+  (portfolio_id, name, category, current_value, value_as_of)
+  values ((select id from test_ids where name = 'user_a_portfolio'),
+          'Future asset', 'cash', 1, pg_catalog.now() + interval '6 minutes')$$,
+  '22008', 'Timestamp cannot be more than five minutes in the future',
+  'manual_assets rejects a future value_as_of');
+select throws_ok($$insert into app.liabilities
+  (portfolio_id, name, category, outstanding_balance, balance_as_of)
+  values ((select id from test_ids where name = 'user_a_portfolio'),
+          'Future liability', 'credit_balance', 1, pg_catalog.now() + interval '6 minutes')$$,
+  '22008', 'Timestamp cannot be more than five minutes in the future',
+  'liabilities rejects a future balance_as_of');
+select throws_ok($$insert into app.manual_assets
+  (portfolio_id, name, category, current_value, value_as_of)
+  values ((select id from test_ids where name = 'user_a_portfolio'),
+          'Pre-epoch asset', 'cash', 1, '1900-01-01 00:00+00')$$,
+  '23514', null, 'manual_assets rejects a pre-1970 value_as_of');
+select throws_ok($$insert into app.liabilities
+  (portfolio_id, name, category, outstanding_balance, balance_as_of)
+  values ((select id from test_ids where name = 'user_a_portfolio'),
+          'Pre-epoch liability', 'credit_balance', 1, '1900-01-01 00:00+00')$$,
+  '23514', null, 'liabilities rejects a pre-1970 balance_as_of');
+reset role;
+
 select * from finish();
 rollback;
