@@ -72,7 +72,7 @@ export function HoldingsPage() {
   const accountList = accounts.data ?? []
   const visible = (positions.data ?? []).filter((position) => selected?.has(position.account_id))
   const eligible = visible.filter((position) => accountList.find((account) => account.id === position.account_id)?.currency_code === 'USD')
-  const symbols = [...new Set((positions.data ?? []).map((position) => position.symbol))].sort()
+  const symbols = (positions.data ?? []).map((position) => position.symbol)
   const quotes = useQuotes(portfolio.data?.id, symbols)
   if (portfolio.isError || accounts.isError || positions.isError) return <ErrorState onRetry={() => { void portfolio.refetch(); void accounts.refetch(); void positions.refetch() }} />
   if (portfolio.isPending || accounts.isPending || positions.isPending || selected === null) return <LoadingState>Loading your holdings…</LoadingState>

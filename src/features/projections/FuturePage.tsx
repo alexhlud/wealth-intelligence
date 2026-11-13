@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
@@ -224,7 +224,12 @@ export function FuturePage() {
   const parsed = assumptionsSchema.safeParse({ investmentRate, inflationRate, years, custom })
   const assumptions = parsed.success ? { investmentRate, assetRate: inflationRate, inflationRate, years: parsed.data.years } : null
   const choices = presets.filter((preset) => selected.includes(preset.value ?? 'custom')).map((preset) => ({ ...preset, value: preset.value ?? custom })).filter((preset) => decimal.safeParse(preset.value).success)
-  const paths = useMemo(() => assumptions ? choices.map((choice) => ({ name: choice.name, points: project(baseline, assumptions, choice.value) })) : [], [assumptions, baseline, choices])
+  const paths = assumptions
+    ? choices.map((choice) => ({
+      name: choice.name,
+      points: project(baseline, assumptions, choice.value),
+    }))
+    : []
   const netWorth = subtractDecimals(sumDecimals([baseline.investments, baseline.assets]), baseline.liabilities)
   const milestones = standardMilestones.filter((target) => BigInt(target) > BigInt(netWorth.split('.')[0] ?? '0'))
   const pinnedIndex = Math.min(selectedPointIndex ?? Math.max(0, (paths[0]?.points.length ?? 1) - 1), Math.max(0, (paths[0]?.points.length ?? 1) - 1))
