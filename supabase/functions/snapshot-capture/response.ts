@@ -16,6 +16,14 @@ export function responseForCaptureSession(session: CaptureSession) {
   return session.kind === 'session' ? null : response(204)
 }
 
-export function responseForCaptureResults(completedPortfolioCount: number) {
-  return response(completedPortfolioCount > 0 ? 200 : 503)
+export function responseForCaptureResults(
+  processedPortfolioCount: number,
+  gapPortfolioCount: number,
+) {
+  const allProcessedPortfoliosGapped = processedPortfolioCount > 0
+    && processedPortfolioCount === gapPortfolioCount
+
+  return response(
+    processedPortfolioCount > 0 && !allProcessedPortfoliosGapped ? 200 : 503,
+  )
 }

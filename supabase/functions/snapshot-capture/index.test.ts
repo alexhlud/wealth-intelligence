@@ -4,6 +4,10 @@ import {
   responseForCaptureSession,
   responseForCaptureResults,
 } from './response.ts'
+import {
+  expectedPortfoliosAreSatisfied,
+  shouldLoadNextPortfolioPage,
+} from './health.ts'
 
 describe('snapshot capture responses', () => {
   it('returns bodyless responses for null-body statuses', () => {
@@ -24,8 +28,35 @@ describe('snapshot capture responses', () => {
     expect(result?.body).toBeNull()
   })
 
-  it('returns a failure when every portfolio capture fails', () => {
-    expect(responseForCaptureResults(0).status).toBe(503)
-    expect(responseForCaptureResults(1).status).toBe(200)
+  it('returns a failure when every processed portfolio records a gap', () => {
+    expect(responseForCaptureResults(0, 0).status).toBe(503)
+    expect(responseForCaptureResults(2, 2).status).toBe(503)
+    expect(responseForCaptureResults(2, 1).status).toBe(200)
+    expect(responseForCaptureResults(2, 0).status).toBe(200)
+  })
+
+  it('excludes empty portfolios and treats a deliberate skip as satisfied', () => {
+    expect(expectedPortfoliosAreSatisfied([], [], [])).toBe(true)
+    expect(expectedPortfoliosAreSatisfied(['with-content'], [], ['with-content'])).toBe(true)
+  })
+
+  it('does not satisfy a content-bearing portfolio without a snapshot or skip', () => {
+    expect(expectedPortfoliosAreSatisfied(['with-content'], [], [])).toBe(false)
+  })
+
+  it('continues through every full portfolio page', () => {
+    const pageSize = 2
+    const pages = [['one', 'two'], ['three', 'four'], ['five']]
+    const processed = [] as string[]
+
+    for (const page of pages) {
+      processed.push(...page)
+
+      if (!shouldLoadNextPortfolioPage(page.length, pageSize)) {
+        break
+      }
+    }
+
+    expect(processed).toEqual(['one', 'two', 'three', 'four', 'five'])
   })
 })

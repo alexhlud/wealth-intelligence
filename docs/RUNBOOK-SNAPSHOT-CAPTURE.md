@@ -55,9 +55,16 @@ enable both in **Database → Extensions** before running `supabase db push`.
 ## Scheduler-health alert
 
 Portfolio Time Machine shows an operational alert after two completed XNYS
-sessions pass without a confirmed automated capture. The alert is global
-system-health information; it does not reveal scheduler credentials, requests,
-or financial data.
+sessions pass without a completed capture. A healthy run processes every
+portfolio, expects only those with at least one open position, manual asset,
+or liability, and satisfies each expected portfolio with either an original
+snapshot or a deliberate `skipped` record. Empty provisioned portfolios are
+not expected; a `gap` never satisfies the run.
+
+The alert is global system-health information; it does not reveal scheduler
+credentials, requests, or financial data. One portfolio that gaps repeatedly
+keeps the alert visible for every user, even when the scheduler is healthy.
+Per-portfolio health is deliberately deferred.
 
 Possible causes include a rejected scheduler authorization, an authorized
 worker failure after authorization, a zero-portfolio worker result, one or
@@ -71,11 +78,26 @@ holiday and early-close calendar before that date. Once coverage is exhausted,
 the worker fails closed and the health alert fires even if there are no later
 calendar rows to count.
 
-Inspect Cron job history and the Edge Function's safe logs, then repair the
-underlying cause. The next successful capture that confirms snapshots for every
-expected portfolio clears the alert automatically. There is no manual reset.
-Saving a snapshot or adding a historical backfill remains available while the
-alert is displayed.
+Inspect Cron job history and the Edge Function's safe logs. If they are
+healthy and the alert persists, identify a repeatedly gapping portfolio in the
+SQL Editor:
+
+```sql
+select
+  portfolio.id,
+  portfolio.name,
+  request.as_of_date,
+  request.reason,
+  request.failure_category
+from app.snapshot_capture_requests as request
+join app.portfolios as portfolio on portfolio.id = request.portfolio_id
+where request.status = 'gap'
+order by request.as_of_date desc, portfolio.id;
+```
+
+The next run that satisfies every expected portfolio clears the alert
+automatically. There is no manual reset. Saving a snapshot or adding a
+historical backfill remains available while the alert is displayed.
 
 ## Rotation
 

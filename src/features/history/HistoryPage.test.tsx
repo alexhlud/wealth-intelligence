@@ -59,9 +59,9 @@ describe('HistoryPage', () => {
       [{ alert: true, alert_since: '2026-09-29T20:00:00.000Z' }],
     )
     const notice = await screen.findByRole('status', {
-      name: 'Automated snapshot capture needs repair',
+      name: 'Automated snapshot capture incomplete',
     })
-    expect(notice.textContent).toMatch(/automated snapshot capture has not run/i)
+    expect(notice.textContent).toMatch(/automated snapshot capture has not completed recently/i)
     expect(screen.getByText(/saving or backfilling snapshots still works normally/i)).toBeTruthy()
   })
 
@@ -69,7 +69,7 @@ describe('HistoryPage', () => {
     renderPage()
     expect(await screen.findByText('As of Aug 28, 2026')).toBeTruthy()
     expect(screen.queryByRole('status', {
-      name: 'Automated snapshot capture needs repair',
+      name: 'Automated snapshot capture incomplete',
     })).toBeNull()
   })
 
@@ -84,9 +84,25 @@ describe('HistoryPage', () => {
     render(<MemoryRouter initialEntries={['/history?date=2026-09-30']}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><HistoryPage /></QueryClientProvider></MemoryRouter>)
     expect(await screen.findByText('As of Sep 30, 2026')).toBeTruthy()
     expect(await screen.findByText('Recorded composition')).toBeTruthy()
-    expect(screen.queryByRole('status', {
-      name: 'Automated snapshot capture needs repair',
-    })).toBeNull()
+    expect((await screen.findByRole('status', {
+      name: 'Capture status unavailable',
+    })).textContent).toMatch(/recorded history remains available/i)
+  })
+
+  it('keeps recorded history accessible when the capture-gap query fails', async () => {
+    rpc.mockImplementation((name: string) => {
+      if (name === 'ensure_primary_portfolio') return Promise.resolve({ data: portfolio, error: null })
+      if (name === 'list_recorded_snapshot_history') return Promise.resolve({ data: snapshots, error: null })
+      if (name === 'list_snapshot_capture_gaps') return Promise.resolve({ data: null, error: new Error('Unavailable') })
+      if (name === 'get_scheduler_health_status') return Promise.resolve({ data: [{ alert: false, alert_since: null }], error: null })
+      return Promise.resolve({ data: detail, error: null })
+    })
+    render(<MemoryRouter initialEntries={['/history?date=2026-09-30']}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><HistoryPage /></QueryClientProvider></MemoryRouter>)
+    expect(await screen.findByText('As of Sep 30, 2026')).toBeTruthy()
+    expect(await screen.findByText('Recorded composition')).toBeTruthy()
+    expect((await screen.findByRole('status', {
+      name: 'Capture gap status unavailable',
+    })).textContent).toMatch(/recorded history remains available/i)
   })
 
   it('shows a persisted missed session as a backfill requirement without inventing a snapshot', async () => {

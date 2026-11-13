@@ -9,11 +9,15 @@ import {
   responseForCaptureSession,
   responseForCaptureResults,
 } from './response.ts'
+import {
+  expectedPortfoliosAreSatisfied,
+  shouldLoadNextPortfolioPage,
+} from './health.ts'
 
 const projectUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const finnhubApiKey = Deno.env.get('FINNHUB_API_KEY') ?? ''
 const schedulerSecret = Deno.env.get('SNAPSHOT_CAPTURE_SCHEDULER_SECRET') ?? ''
-const batchSize = 20
+const portfolioPageSize = 100
 
 type AuthDiagnostics = {
   method: string
@@ -191,13 +195,18 @@ async function recordInvocation(
 
 async function hasCapturedEveryPortfolio(
   admin: NonNullable<ReturnType<typeof createAdminClient>>,
-  portfolios: { id: string }[],
+  expectedPortfolioIds: string[],
+  asOfDate: string,
   marketCloseAt: string,
 ) {
+  if (!expectedPortfolioIds.length) {
+    return true
+  }
+
   const { data, error } = await admin
     .from('portfolio_snapshots')
     .select('portfolio_id')
-    .in('portfolio_id', portfolios.map((portfolio) => portfolio.id))
+    .in('portfolio_id', expectedPortfolioIds)
     .eq('market_close_at', marketCloseAt)
     .is('corrects_snapshot_id', null)
 
@@ -206,8 +215,58 @@ async function hasCapturedEveryPortfolio(
     return false
   }
 
-  return new Set(data?.map((snapshot) => snapshot.portfolio_id)).size
-    === portfolios.length
+  const { data: skipped, error: skippedError } = await admin
+    .from('snapshot_capture_requests')
+    .select('portfolio_id')
+    .in('portfolio_id', expectedPortfolioIds)
+    .eq('as_of_date', asOfDate)
+    .eq('status', 'skipped')
+
+  if (skippedError) {
+    logFailure('verify_scheduler_skips', skippedError)
+    return false
+  }
+
+  return expectedPortfoliosAreSatisfied(
+    expectedPortfolioIds,
+    data?.map((snapshot) => snapshot.portfolio_id) ?? [],
+    skipped?.map((request) => request.portfolio_id) ?? [],
+  )
+}
+
+async function portfolioHasEligibleFacts(
+  admin: NonNullable<ReturnType<typeof createAdminClient>>,
+  portfolio: { id: string; user_id: string },
+) {
+  const [positions, manualAssets, liabilities] = await Promise.all([
+    admin
+      .from('positions')
+      .select('id')
+      .eq('portfolio_id', portfolio.id)
+      .eq('user_id', portfolio.user_id)
+      .eq('status', 'open')
+      .limit(1),
+    admin
+      .from('manual_assets')
+      .select('id')
+      .eq('portfolio_id', portfolio.id)
+      .eq('user_id', portfolio.user_id)
+      .limit(1),
+    admin
+      .from('liabilities')
+      .select('id')
+      .eq('portfolio_id', portfolio.id)
+      .eq('user_id', portfolio.user_id)
+      .limit(1),
+  ])
+
+  if (positions.error || manualAssets.error || liabilities.error) {
+    throw positions.error ?? manualAssets.error ?? liabilities.error
+  }
+
+  return Boolean(
+    positions.data?.length || manualAssets.data?.length || liabilities.data?.length,
+  )
 }
 
 export async function handler(request: Request) {
@@ -249,136 +308,133 @@ export async function handler(request: Request) {
     return finish(noSessionResponse!, false)
   }
 
-  const { data: portfolios, error } = await admin
-    .from('portfolios')
-    .select('id,user_id')
-    .limit(batchSize)
+  let lastPortfolioId: string | null = null
+  let foundPortfolio = false
+  let processedPortfolioCount = 0
+  let gapPortfolioCount = 0
+  const expectedPortfolioIds: string[] = []
+  let captureFailure = false
 
-  logPortfolioQuery(serviceKey.source, portfolios, error)
+  while (true) {
+    let query = admin
+      .from('portfolios')
+      .select('id,user_id')
+      .order('id', { ascending: true })
+      .limit(portfolioPageSize)
 
-  if (error) {
-    logFailure('list_portfolios', error)
-    return finish(response(503), false)
-  }
+    if (lastPortfolioId) {
+      query = query.gt('id', lastPortfolioId)
+    }
 
-  if (!portfolios?.length) {
-    console.error('Snapshot capture no portfolios visible', {
-      serviceKeySource: serviceKey.source,
-      portfolioCount: 0,
-    })
-    return finish(response(503), false)
-  }
+    const { data: portfolios, error } = await query
 
-  let completedPortfolioCount = 0
+    logPortfolioQuery(serviceKey.source, portfolios, error)
 
-  for (const portfolio of portfolios ?? []) {
-    try {
-      const { data: previous } = await admin
-        .from('snapshot_capture_requests')
-        .select('as_of_date')
-        .eq('portfolio_id', portfolio.id)
-        .not('as_of_date', 'is', null)
-        .order('as_of_date', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      const { data: pending } = await admin
-        .from('snapshot_capture_requests')
-        .select('reason')
-        .eq('portfolio_id', portfolio.id)
-        .is('as_of_date', null)
-        .eq('status', 'pending')
-        .maybeSingle()
-      const reason = pending?.reason === 'position_change'
-        ? 'position_change'
-        : 'daily_close'
+    if (error) {
+      logFailure('list_portfolios', error)
+      return finish(response(503), false)
+    }
 
-      for (const missed of getSessionsAfter(
-        previous?.as_of_date ?? null,
-        session.asOfDate,
-      )) {
-        const { data: existing } = await admin
-          .from('portfolio_snapshots')
-          .select('id')
+    if (!portfolios?.length) {
+      break
+    }
+
+    foundPortfolio = true
+    lastPortfolioId = portfolios.at(-1)!.id
+
+    for (const portfolio of portfolios) {
+      try {
+        if (await portfolioHasEligibleFacts(admin, portfolio)) {
+          expectedPortfolioIds.push(portfolio.id)
+        }
+
+        const { data: previous } = await admin
+          .from('snapshot_capture_requests')
+          .select('as_of_date')
           .eq('portfolio_id', portfolio.id)
-          .eq('market_close_at', missed.marketCloseAt)
-          .is('corrects_snapshot_id', null)
+          .not('as_of_date', 'is', null)
+          .order('as_of_date', { ascending: false })
+          .limit(1)
           .maybeSingle()
+        const { data: pending } = await admin
+          .from('snapshot_capture_requests')
+          .select('reason')
+          .eq('portfolio_id', portfolio.id)
+          .is('as_of_date', null)
+          .eq('status', 'pending')
+          .maybeSingle()
+        const reason = pending?.reason === 'position_change'
+          ? 'position_change'
+          : 'daily_close'
 
-        if (!existing) {
-          const recorded = await admin.rpc('record_snapshot_capture_session', {
-            p_user_id: portfolio.user_id,
-            p_portfolio_id: portfolio.id,
-            p_as_of_date: missed.asOfDate,
-            p_reason: 'daily_close',
-            p_status: 'gap',
-            p_failure_category: 'outside_capture_window',
-          })
+        for (const missed of getSessionsAfter(
+          previous?.as_of_date ?? null,
+          session.asOfDate,
+        )) {
+          const { data: existing } = await admin
+            .from('portfolio_snapshots')
+            .select('id')
+            .eq('portfolio_id', portfolio.id)
+            .eq('market_close_at', missed.marketCloseAt)
+            .is('corrects_snapshot_id', null)
+            .maybeSingle()
 
-          if (recorded.error) {
-            throw recorded.error
+          if (!existing) {
+            const recorded = await admin.rpc('record_snapshot_capture_session', {
+              p_user_id: portfolio.user_id,
+              p_portfolio_id: portfolio.id,
+              p_as_of_date: missed.asOfDate,
+              p_reason: 'daily_close',
+              p_status: 'gap',
+              p_failure_category: 'outside_capture_window',
+            })
+
+            if (recorded.error) {
+              throw recorded.error
+            }
           }
         }
-      }
 
-      const built = await buildSnapshot(
-        admin,
-        portfolio.user_id,
-        portfolio.id,
-        finnhubApiKey,
-      )
+        const built = await buildSnapshot(
+          admin,
+          portfolio.user_id,
+          portfolio.id,
+          finnhubApiKey,
+        )
 
-      if (built.result.kind === 'ready' && built.payload) {
-        const saved = await admin.rpc('create_scheduled_portfolio_snapshot', {
-          p_user_id: portfolio.user_id,
-          p_portfolio_id: portfolio.id,
-          p_as_of_date: session.asOfDate,
-          p_market_close_at: session.marketCloseAt,
-          p_source: reason,
-          p_positions: built.payload.positions,
-          p_manual_assets: built.payload.manualAssets,
-          p_liabilities: built.payload.liabilities,
-          p_request_id: crypto.randomUUID(),
-        })
+        let status: 'captured' | 'gap' | 'skipped'
 
-        if (saved.error) {
-          throw saved.error
+        if (built.result.kind === 'ready' && built.payload) {
+          const saved = await admin.rpc('create_scheduled_portfolio_snapshot', {
+            p_user_id: portfolio.user_id,
+            p_portfolio_id: portfolio.id,
+            p_as_of_date: session.asOfDate,
+            p_market_close_at: session.marketCloseAt,
+            p_source: reason,
+            p_positions: built.payload.positions,
+            p_manual_assets: built.payload.manualAssets,
+            p_liabilities: built.payload.liabilities,
+            p_request_id: crypto.randomUUID(),
+          })
+
+          if (saved.error) {
+            throw saved.error
+          }
+
+          status = 'captured'
+        } else if (built.result.kind === 'already_recorded') {
+          status = 'captured'
+        } else {
+          status = built.result.reason === 'no_eligible_facts' ? 'skipped' : 'gap'
         }
 
-        const recorded = await admin.rpc('record_snapshot_capture_session', {
-          p_user_id: portfolio.user_id,
-          p_portfolio_id: portfolio.id,
-          p_as_of_date: session.asOfDate,
-          p_reason: reason,
-          p_status: 'captured',
-          p_failure_category: null,
-        })
-
-        if (recorded.error) {
-          throw recorded.error
-        }
-      } else if (built.result.kind === 'already_recorded') {
-        const recorded = await admin.rpc('record_snapshot_capture_session', {
-          p_user_id: portfolio.user_id,
-          p_portfolio_id: portfolio.id,
-          p_as_of_date: session.asOfDate,
-          p_reason: reason,
-          p_status: 'captured',
-          p_failure_category: null,
-        })
-
-        if (recorded.error) {
-          throw recorded.error
-        }
-      } else if (built.result.kind !== 'already_recorded') {
-        const failure = built.result.reason === 'price_unavailable'
+        const failure = built.result.kind === 'unavailable'
+          && built.result.reason === 'price_unavailable'
           ? 'price_unavailable'
-          : built.result.reason === 'state_changed_after_close'
+          : built.result.kind === 'unavailable'
+            && built.result.reason === 'state_changed_after_close'
             ? 'state_changed_after_close'
             : 'outside_capture_window'
-        const status = built.result.reason === 'no_eligible_facts'
-          ? 'skipped'
-          : 'gap'
-
         const recorded = await admin.rpc('record_snapshot_capture_session', {
           p_user_id: portfolio.user_id,
           p_portfolio_id: portfolio.id,
@@ -391,21 +447,39 @@ export async function handler(request: Request) {
         if (recorded.error) {
           throw recorded.error
         }
-      }
 
-      completedPortfolioCount += 1
-    } catch (failure) {
-      logFailure('capture_portfolio', failure)
+        processedPortfolioCount += 1
+        gapPortfolioCount += status === 'gap' ? 1 : 0
+      } catch (failure) {
+        captureFailure = true
+        logFailure('capture_portfolio', failure)
+      }
+    }
+
+    if (!shouldLoadNextPortfolioPage(portfolios.length, portfolioPageSize)) {
+      break
     }
   }
 
-  const captured = await hasCapturedEveryPortfolio(
+  if (!foundPortfolio) {
+    console.error('Snapshot capture no portfolios visible', {
+      serviceKeySource: serviceKey.source,
+      portfolioCount: 0,
+    })
+    return finish(response(503), false)
+  }
+
+  const captured = !captureFailure && await hasCapturedEveryPortfolio(
     admin,
-    portfolios,
+    expectedPortfolioIds,
+    session.asOfDate,
     session.marketCloseAt,
   )
 
-  return finish(responseForCaptureResults(completedPortfolioCount), captured)
+  return finish(
+    responseForCaptureResults(processedPortfolioCount, gapPortfolioCount),
+    captured,
+  )
 }
 
 if (import.meta.main) {
