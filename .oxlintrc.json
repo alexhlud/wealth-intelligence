@@ -4,5 +4,8 @@
     ".claude/**",
     "dist/**",
     "node_modules/**"
-  ]
+  ],
+  "rules": {
+    "react/rules-of-hooks": "error"
+  }
 }

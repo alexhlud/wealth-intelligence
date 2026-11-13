@@ -7,9 +7,10 @@ const requestSchema = z.array(canonicalSymbolSchema).max(25)
 const responseSchema = z.object({ quotes: z.array(quoteSchema) })
 
 export async function getQuotes(symbols: readonly string[]) {
+  const uniqueSymbols = [...new Set(symbols)].sort()
   const quotes = []
-  for (let offset = 0; offset < symbols.length; offset += 25) {
-    const batch = requestSchema.parse(symbols.slice(offset, offset + 25))
+  for (let offset = 0; offset < uniqueSymbols.length; offset += 25) {
+    const batch = requestSchema.parse(uniqueSymbols.slice(offset, offset + 25))
     const { data, error } = await supabase.functions.invoke('market-data', { body: { operation: 'quotes', symbols: batch } })
     if (error) throw new Error('Quotes unavailable')
     const parsed = responseSchema.parse(data).quotes
@@ -21,10 +22,11 @@ export async function getQuotes(symbols: readonly string[]) {
 }
 
 export function useQuotes(portfolioId: string | undefined, symbols: readonly string[]) {
+  const uniqueSymbols = [...new Set(symbols)].sort()
   return useQuery({
-    queryKey: ['quotes', portfolioId, [...symbols].sort()],
-    queryFn: () => getQuotes([...symbols].sort()),
-    enabled: Boolean(portfolioId && symbols.length),
+    queryKey: ['quotes', portfolioId, uniqueSymbols],
+    queryFn: () => getQuotes(uniqueSymbols),
+    enabled: Boolean(portfolioId && uniqueSymbols.length),
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: true,
     retry: false,

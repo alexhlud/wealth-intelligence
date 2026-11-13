@@ -12,10 +12,24 @@ describe('quote requests', () => {
   it('requests bounded batches without identity or credentials in the body', async () => {
     invoke.mockImplementation((_name: string, { body }: { body: { symbols: string[] } }) => Promise.resolve({ data: { quotes: body.symbols.map(quote) }, error: null }))
     const symbols = Array.from({ length: 26 }, (_, index) => `S${index}`)
+    const sortedSymbols = [...symbols].sort()
     expect(await getQuotes(symbols)).toHaveLength(26)
     expect(invoke).toHaveBeenCalledTimes(2)
-    expect(invoke.mock.calls[0]?.[1]).toEqual({ body: { operation: 'quotes', symbols: symbols.slice(0, 25) } })
-    expect(invoke.mock.calls[1]?.[1]).toEqual({ body: { operation: 'quotes', symbols: symbols.slice(25) } })
+    expect(invoke.mock.calls[0]?.[1]).toEqual({ body: { operation: 'quotes', symbols: sortedSymbols.slice(0, 25) } })
+    expect(invoke.mock.calls[1]?.[1]).toEqual({ body: { operation: 'quotes', symbols: sortedSymbols.slice(25) } })
+  })
+
+  it('deduplicates and sorts symbols before requesting and validating quotes', async () => {
+    invoke.mockImplementation((_name: string, { body }: { body: { symbols: string[] } }) => Promise.resolve({ data: { quotes: body.symbols.map(quote) }, error: null }))
+
+    await expect(getQuotes(['VOO', 'QQQ', 'VOO'])).resolves.toEqual([
+      quote('QQQ'),
+      quote('VOO'),
+    ])
+
+    expect(invoke).toHaveBeenCalledWith('market-data', {
+      body: { operation: 'quotes', symbols: ['QQQ', 'VOO'] },
+    })
   })
 
   it('rejects malformed, incomplete, or unexpected responses', async () => {
