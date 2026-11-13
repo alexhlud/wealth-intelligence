@@ -466,7 +466,7 @@ select ok(not exists (
 select is((select count(*) from pg_catalog.pg_proc p
            join pg_catalog.pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'app' and p.prosecdef),
-  12::bigint, 'The approved write RPCs, MFA helper, and scheduler-health boundary are SECURITY DEFINER');
+  13::bigint, 'Approved write RPCs, MFA helper, scheduler health, and capture-gap boundary are SECURITY DEFINER');
 select ok(not exists (
   select 1 from pg_catalog.pg_proc p
   join pg_catalog.pg_namespace n on n.oid = p.pronamespace
@@ -591,9 +591,18 @@ select throws_ok($$select app.record_scheduler_invocation(false)$$,
   '42501', null, 'anon cannot record scheduler invocations');
 reset role;
 
+select set_config('request.jwt.claim.role', null, true);
+select set_config('request.jwt.claim.sub', null, true);
+select set_config('request.jwt.claims', null, true);
+set local role service_role;
+select throws_ok($$select app.record_scheduler_invocation(false)$$,
+  '42501', 'Worker access required',
+  'service-role database access without a JWT role claim cannot invoke worker RPCs');
+reset role;
+
 select set_config('request.jwt.claim.role', 'service_role', true);
 select set_config('request.jwt.claim.sub', '', true);
-set local role service_role;
+reset role;
 select lives_ok($$select app.record_scheduler_invocation(true)$$,
   'service role records a successful scheduler capture');
 reset role;
@@ -677,6 +686,28 @@ insert into auth.mfa_factors (id, user_id, created_at, updated_at, factor_type, 
 values ('bbbbbbbb-1111-1111-1111-111111111111',
         '22222222-2222-2222-2222-222222222222', now(), now(), 'totp', 'unverified', 'test-secret');
 
+reset role;
+insert into app.portfolios (user_id, name)
+values ('11111111-1111-1111-1111-111111111111', 'User A second portfolio');
+insert into test_ids (name, id)
+select 'user_a_second_portfolio', id
+from app.portfolios
+where user_id = '11111111-1111-1111-1111-111111111111'
+  and name = 'User A second portfolio';
+insert into app.snapshot_capture_requests
+  (user_id, portfolio_id, as_of_date, reason, status, failure_category)
+values
+  ('11111111-1111-1111-1111-111111111111',
+   (select id from test_ids where name = 'user_a_portfolio'),
+   '2026-10-01', 'daily_close', 'gap', 'price_unavailable'),
+  ('11111111-1111-1111-1111-111111111111',
+   (select id from test_ids where name = 'user_a_second_portfolio'),
+   '2026-10-02', 'daily_close', 'gap', 'price_unavailable'),
+  ('22222222-2222-2222-2222-222222222222',
+   (select id from test_ids where name = 'user_b_portfolio'),
+   '2026-10-03', 'daily_close', 'gap', 'price_unavailable');
+reset role;
+
 select set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
 select set_config('request.jwt.claim.aal', 'aal1', true);
 set local role authenticated;
@@ -711,6 +742,8 @@ select throws_ok($$select * from app.edit_position(
   null, null, null, null, 2, 1, null, null, null,
   '2026-09-03 00:00+00', null, 'aaaaaaaa-0000-0000-0000-000000000100')$$,
   '42501', 'MFA verification required', 'AAL1 cannot invoke elevated edit_position');
+select throws_ok($$select * from app.list_snapshot_capture_gaps()$$,
+  '42501', 'MFA verification required', 'AAL1 cannot read capture gaps');
 
 select set_config('request.jwt.claim.aal', 'aal2', true);
 select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated","aal":"aal2"}', true);
@@ -727,6 +760,18 @@ select lives_ok($$select * from app.create_position(
   'MFA', 'MFA allowed', 'etf', 1, 1, '2026-09-03 00:00+00', null,
   'aaaaaaaa-0000-0000-0000-000000000101')$$,
   'AAL2 can invoke elevated create_position');
+select is((select count(*) from app.list_snapshot_capture_gaps()), 2::bigint,
+  'AAL2 reads capture gaps for every owned portfolio');
+select is((select count(*) from app.list_snapshot_capture_gaps()
+           where as_of_date = date '2026-10-03'), 0::bigint,
+  'capture-gap RPC never returns another user''s portfolio gap');
+reset role;
+
+select set_config('request.jwt.claim.role', 'anon', true);
+select set_config('request.jwt.claim.sub', '', true);
+set local role anon;
+select throws_ok($$select * from app.list_snapshot_capture_gaps()$$,
+  '42501', null, 'anon cannot execute the capture-gap RPC');
 reset role;
 
 select ok(

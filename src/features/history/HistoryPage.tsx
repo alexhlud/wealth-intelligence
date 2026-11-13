@@ -27,7 +27,7 @@ export function HistoryPage() {
   const [params, setParams] = useSearchParams()
   const portfolio = useQuery({ queryKey: ['history-portfolio'], queryFn: loadPortfolio })
   const history = useQuery({ queryKey: ['recorded-history', portfolio.data?.id, null], queryFn: () => loadHistory(portfolio.data!.id, null), enabled: Boolean(portfolio.data) })
-  const gaps = useQuery({ queryKey: ['snapshot-capture-gaps', portfolio.data?.id], queryFn: () => loadCaptureGaps(portfolio.data!.id), enabled: Boolean(portfolio.data) })
+  const gaps = useQuery({ queryKey: ['snapshot-capture-gaps'], queryFn: loadCaptureGaps, enabled: Boolean(portfolio.data) })
   const schedulerHealth = useQuery({ queryKey: ['scheduler-health-status'], queryFn: loadSchedulerHealthStatus })
   const rawDate = params.get('date')
   const requestedDate = dateParameter.safeParse(rawDate).success ? rawDate! : null
@@ -41,12 +41,14 @@ export function HistoryPage() {
   const monthSnapshots = useMemo(() => visibleMonth ? snapshots.filter((snapshot) => sameMonth(snapshot.as_of_date, visibleMonth)) : [], [snapshots, visibleMonth])
   const select = (date: string) => { setParams({ date }); setVisibleMonth(monthStart(date)) }
 
-  if (portfolio.isPending || (Boolean(portfolio.data) && (history.isPending || gaps.isPending))) return <LoadingState>Loading recorded portfolio history...</LoadingState>
-  if (portfolio.isError || history.isError || gaps.isError || !portfolio.data) return <ErrorState onRetry={() => { void portfolio.refetch(); void history.refetch(); void gaps.refetch() }} />
+  if (portfolio.isPending || (Boolean(portfolio.data) && history.isPending)) return <LoadingState>Loading recorded portfolio history...</LoadingState>
+  if (portfolio.isError || history.isError || !portfolio.data) return <ErrorState onRetry={() => { void portfolio.refetch(); void history.refetch() }} />
 
   return <section className="history-page">
     <header className="page-header"><div><h1>Portfolio Time Machine</h1><p>Select an exact recorded portfolio state. Current holdings and quotes are never substituted.</p></div></header>
-    {schedulerHealth.data?.alert ? <section className="history-status" role="status" aria-label="Automated snapshot capture needs repair"><strong>Automated snapshot capture has not run.</strong><span> An operator must repair it. Saving or backfilling snapshots still works normally.</span></section> : null}
+    {schedulerHealth.isError ? <section className="history-status history-status-neutral" role="status" aria-label="Capture status unavailable"><strong>Capture status is unavailable.</strong><span> Recorded history remains available.</span></section> : null}
+    {schedulerHealth.data?.alert ? <section className="history-status" role="status" aria-label="Automated snapshot capture incomplete"><strong>Automated snapshot capture has not completed recently.</strong><span> Saving or backfilling snapshots still works normally.</span></section> : null}
+    {gaps.isError ? <section className="history-status history-status-neutral" role="status" aria-label="Capture gap status unavailable"><strong>Capture gap status is unavailable.</strong><span> Recorded history remains available.</span></section> : null}
     {gaps.data?.length ? <section className="history-status" role="status" aria-label="Historical capture gaps"><strong>Historical capture gap{gaps.data.length === 1 ? '' : 's'} need backfill.</strong><span> No snapshot was recorded for {gaps.data.map((gap) => dateLabel(gap.as_of_date)).join(', ')}. Add a historical snapshot; later current values will never fill this gap.</span></section> : null}
     {dateWasUnavailable && <p className="history-status" role="status">That date has no recorded snapshot. Showing the newest recorded snapshot instead.</p>}
     {!snapshots.length ? <p className="history-empty">No recorded snapshots yet. Save or add a verified historical snapshot to begin your history.</p> : <>

@@ -57,8 +57,8 @@ export async function loadHistory(portfolioId: string, startDate: string | null)
 }
 
 /** Returns only persisted missed sessions; it never derives a gap from current state. */
-export async function loadCaptureGaps(portfolioId: string) {
-  const { data, error } = await supabase.rpc('list_snapshot_capture_gaps', { p_portfolio_id: portfolioId })
+export async function loadCaptureGaps() {
+  const { data, error } = await supabase.rpc('list_snapshot_capture_gaps')
   if (error) throw error
   const parsed = z.array(captureGapSchema).safeParse(data)
   if (!parsed.success) throw new Error('Capture status is unavailable')
