@@ -1,8 +1,8 @@
 # Phase trust-1 — Batch B: money as text, worker-only snapshots, archive
 
-Status: plan for review. No code, migration, grant or test changes ship with
-this document. Each numbered item below becomes its own pull request after
-approval, in the order given under "Delivery order".
+Status: approved 2026-11-24 (see "Decisions made"). No code, migration,
+grant or test changes ship with this document. Each numbered item below
+becomes its own pull request, in the order given under "Delivery order".
 
 ## Objective and boundary
 
@@ -78,17 +78,21 @@ tests and `test:rls` green in CI (#46).
 
 | Step | Item | Schema change | Depends on |
 | --- | --- | --- | --- |
-| B1 | 6. Stale quotes and worker `.error` checks | none | — |
+| B1 | 6. Stale quotes and worker `.error` checks; closed-position half of 5; Future zero-liability sign | none | — |
 | B2 | 1. Money as text end to end | none (reads only) | — |
 | B3 | 2. Remove manual snapshots, revoke EXECUTE | grant + UI + edge | — |
 | B4 | 3. One original per `(portfolio_id, as_of_date)` | unique index | query b = 0 |
 | B5 | 4. Archive, revoke DELETE | columns, grants, RPCs | — |
-| B6 | 5. After-close check sees closes and archives | none | B5 for archives |
+| B6 | 5. After-close check sees archives and restores | none | B5 |
 
 B1 and B2 come first because they change no schema and stop new imprecise
-or stale data from entering immutable history. Part of item 5, for closed
-positions, needs no schema; it can ship in B1 if review prefers. Its
-archive half needs B5.
+or stale data from entering immutable history.
+
+B1 also carries two small changes, by decision:
+
+- The closed-position half of item 5, which needs no schema.
+- A Future page display fix: the baseline line shows `Liabilities −$0.00`
+  when liabilities are zero. A zero amount shows no minus sign.
 
 ## Rollback principle
 
@@ -144,7 +148,8 @@ table would add functions without adding safety.
 - **Snapshots list.** Cast `investment_value` and `total_net_worth`.
 - **Recovery export.** Replace `select('*')` with an explicit column list per
   table, kept in one allowlist in `recoveryExport.ts`, with money columns
-  cast. Bump `export_version` to 2, because the column set is now explicit.
+  cast. Bump `export_version` to 2 (decided), because the column set is now
+  explicit.
   Remove `decimalString`'s number branch.
 - **App reads.** Cast in the shared selects for positions, manual assets and
   liabilities. Then remove the `z.number()` branch from the read check in
@@ -327,24 +332,49 @@ then drops the new one.
 
 ### Schema
 
-- Add `archived_at timestamptz null` to `accounts`, `manual_assets` and
-  `liabilities`. The column is additive and existing rows stay `null`, which
-  means active.
+- Add `archived_at timestamptz null` and `restored_at timestamptz null` to
+  `accounts`, `manual_assets` and `liabilities`. Both columns are additive.
+  Existing rows stay `null`, which means active and never restored.
 - Revoke DELETE on all three from `authenticated`. Keep positions SELECT-only
   (no change; already true).
-- `archived_at` is set only by the server:
-  - Replace the table-level UPDATE grant with column-level UPDATE grants on
-    the editable columns. Leave out `archived_at`, `user_id`, `portfolio_id`
-    and `created_at`.
-  - Add RPCs `app.archive_account(uuid)`, `app.archive_manual_asset(uuid)`
-    and `app.archive_liability(uuid)`. Each is `SECURITY INVOKER` and sets
-    `archived_at = pg_catalog.now()` where `id = p_id` and
-    `user_id = auth.uid()` and `archived_at is null`. RLS still applies.
-- A `BEFORE UPDATE` trigger rejects any update to a row whose `archived_at`
-  is not null, so archived rows are read-only.
+- Replace the table-level UPDATE grant with column-level UPDATE grants on
+  the editable columns plus `archived_at`. Leave out `restored_at`,
+  `user_id`, `portfolio_id`, `created_at` and `updated_at`.
+- Both timestamps are set only by the server. A `BEFORE UPDATE` trigger,
+  `app.enforce_archive_state()`, runs on all three tables:
+  - `archived_at` from null to any value: the trigger sets it to
+    `pg_catalog.now()`, whatever the client sent. This is an archive, and a
+    backdated or future timestamp can't be stored.
+  - `archived_at` from a value to null: this is a restore. The trigger sets
+    `restored_at = pg_catalog.now()`.
+  - Any other change to `archived_at` (for example one timestamp to another)
+    raises `42501`.
+  - Any change to another column while the row is archived (old and new
+    `archived_at` both set) raises `22023`, so archived rows are read-only.
+  - `restored_at` is not granted to `authenticated`. The trigger sets it on
+    `NEW`, and Postgres checks column privileges only for the columns named
+    in the statement, not for columns a trigger changes.
+- Add RPCs `app.archive_account(uuid)`, `app.archive_manual_asset(uuid)`,
+  `app.archive_liability(uuid)` and the matching `app.restore_account(uuid)`,
+  `app.restore_manual_asset(uuid)` and `app.restore_liability(uuid)`.
+  - Each is `SECURITY INVOKER` and runs one `update … where id = p_id`.
+  - Archive matches `archived_at is null`; restore matches
+    `archived_at is not null`.
+  - Ownership and the MFA restrictive policies come from RLS, as for any
+    other owner write. Identity is never a parameter.
+  - Each returns whether a row changed, so the UI can show a true message.
+  - The RPCs exist so the client never sends a timestamp, and so the account
+    rule below has one home.
+- Design correction from the first draft: that draft paired invoker RPCs
+  with a grant that left out `archived_at`. An invoker RPC runs as
+  `authenticated`, so it could not write that column. Granting the column
+  and letting the trigger set its value keeps the functions
+  `SECURITY INVOKER`. No `SECURITY DEFINER` function is needed.
 - An account can't be archived while it has an open position, an active
-  manual asset or an active liability. The RPC raises `22023` with a safe
-  message. The UI asks the user to close or archive those first.
+  manual asset or an active liability. `archive_account` raises `22023` with
+  a safe message. The UI asks the user to close or archive those first.
+- A manual asset or liability can't be restored into an archived account.
+  The account must be restored first; otherwise the restore raises `22023`.
 
 ### Behavior
 
@@ -356,22 +386,26 @@ then drops the new one.
   Items archived after the close are handled in item 5.
 - Item writes already enqueue a capture request through the existing
   `after update` triggers. Archiving needs no new trigger for that.
-- The recovery export includes archived rows with `archived_at`, so a
-  restore from export is complete.
+- The recovery export includes archived rows with `archived_at` and
+  `restored_at`, so a restore from export is complete.
 
-### Decision: restore is not allowed in this phase
+### Restore (decided: allowed in this phase)
 
-Recommended: no un-archive.
-
-- Restoring would bring back an item whose value was frozen at archive time
-  and could be stale.
-- It would also need a second server-set timestamp to keep current totals
-  honest about the gap.
-- Re-adding the item is one form, and it gives a clean, dated record.
-
-If restore is wanted later, it is an additive `app.restore_*` RPC that sets
-`archived_at = null` and records a `restored_at`. Nothing in this plan
-blocks that.
+- A restore clears `archived_at`. Current reads filter on
+  `archived_at is null`, so the item rejoins current totals from the restore
+  time onward.
+- Past snapshots are copies. Neither archiving nor restoring changes them.
+  Snapshots recorded while the item was archived don't include it, and that
+  stays true.
+- The restored item keeps the value it had when it was archived. The UI
+  says so and links to Edit, because that value may be stale.
+- The after-close check (item 5) treats a restore after the close like any
+  other change. Two signals catch it:
+  - `restored_at > market_close_at`.
+  - The existing `set_updated_at` trigger also bumps `updated_at`, which the
+    worker already checks.
+- Only the latest archive and restore times are kept on the row. A full
+  lifecycle log is not part of this phase.
 
 ### Tests
 
@@ -379,33 +413,56 @@ blocks that.
   `accounts`, `liabilities`, `positions`) throws `42501`.
   `has_table_privilege(..., 'delete')` is false for all four.
 - pgTAP: `update app.manual_assets set archived_at = now() - interval '1
-  day'` throws `42501`, so archived_at can't be backdated.
+  day'` stores the transaction's `now()`, not the backdated value.
+  Changing one archive timestamp to another throws `42501`.
+- pgTAP: `update … set restored_at = …` as `authenticated` throws `42501`.
 - pgTAP: `archive_manual_asset` sets `archived_at`. A second call changes
-  nothing. Updating an archived row throws.
-- pgTAP: archiving another user's item affects zero rows (RLS).
+  nothing and returns false. Updating any other column of an archived row
+  throws `22023`.
 - pgTAP: archiving an account with an open position throws `22023`.
 - pgTAP: a snapshot recorded before the archive still contains the item.
-- Vitest: archived items are absent from current totals on every page.
-  The Archive action calls the RPC.
+- pgTAP, restore, for each of the three tables:
+  - Owner only: user B calling `restore_*` on user A's archived item changes
+    zero rows, and A's row stays archived.
+  - MFA policy applies: with an aal1 JWT for a user who has a verified
+    factor, `restore_*` changes zero rows (the restrictive policy); with
+    aal2 it restores.
+  - The item rejoins current totals from the restore time. Before the
+    restore, the current-total read excludes it. After the restore, it
+    includes it, `restored_at` equals the transaction `now()`, and
+    `archived_at` is null.
+  - Past snapshots are unchanged: the item's absence from a snapshot
+    recorded while it was archived, and its presence in one recorded before
+    the archive, are both identical after the restore.
+  - Restoring into an archived account throws `22023`.
+- Vitest (worker): an item restored one minute after the close returns
+  `state_changed_after_close`. One restored before the close is captured.
+- Vitest: archived items are absent from current totals on every page. The
+  Archive and Restore actions call their RPCs.
 
 ### Risk
 
 - Column-level grants are easy to get wrong when a later migration adds a
   column. Add a pgTAP test that lists the updatable columns per table and
   fails when a new column appears without a decision.
-- The UI gains an Archive action on Accounts, Assets and Liabilities. That
-  is a visible change and needs a design check against DESIGN.md.
+- The UI gains Archive and Restore actions on Accounts, Assets and
+  Liabilities, and a way to see archived items. That is a visible change and
+  needs a design check against DESIGN.md.
 
 ### Rollback
 
 A forward migration re-grants table-level UPDATE and DELETE and drops the
-trigger and RPCs. The `archived_at` column stays, because dropping it would
-lose the archive history; its values keep meaning "archived". The UI revert
-shows archived rows again, unless the read filters are kept.
+trigger and RPCs. The `archived_at` and `restored_at` columns stay, because
+dropping them would lose the archive history; their values keep their
+meaning. The UI revert shows archived rows again, unless the read filters
+are kept.
 
 ---
 
-## 5. After-close check sees closes and archives (B6)
+## 5. After-close check sees closes and archives (B1 and B6)
+
+The closed-position half ships in B1 (decided). The archive and restore
+half ships in B6, after B5.
 
 ### Problem
 
@@ -421,18 +478,20 @@ Today a deleted manual asset or liability has the same effect.
 - Positions read becomes `status = 'open' or closed_at > :market_close_at`.
   If any row has `closed_at > market_close_at`, return
   `state_changed_after_close`, as an edit after the close already does.
-- After B5, manual assets, liabilities and accounts are read where
+- After B5 (in B6), manual assets, liabilities and accounts are read where
   `archived_at is null or archived_at > :market_close_at`. Any
-  `archived_at > market_close_at` returns `state_changed_after_close`.
+  `archived_at > market_close_at` or `restored_at > market_close_at` returns
+  `state_changed_after_close`.
 - Rows archived at or before the close are excluded from the payload.
 
 ### Tests
 
-- Vitest (worker): a position closed one minute after the close returns
+- Vitest (worker, B1): a position closed one minute after the close returns
   `state_changed_after_close`. One closed one minute before is excluded and
   capture proceeds.
-- Vitest (worker): the same two cases for an archived manual asset, an
-  archived liability and an archived account.
+- Vitest (worker, B6): the same two cases for an archived manual asset, an
+  archived liability and an archived account, and for a restore after the
+  close.
 - pgTAP is not needed, because this is worker logic over existing columns.
 
 ### Risk
@@ -460,12 +519,12 @@ Change: if a quote's `marketTimestamp` is before the session open, return
 snapshot. This reuses the existing failure category, so the
 `record_snapshot_capture_session` allowlist needs no migration.
 
-**Decision needed.** The spec says "older than the session close". Read
-literally, that would reject a normal closing print stamped 15:59:59 and
-would make almost every capture unavailable. This plan uses "before the
-session open (09:30 America/New_York on `as_of_date`)" instead. That means
-"the quote is from this session", and it still accepts a thinly traded
-symbol whose last trade was earlier in the day.
+**Decided: before the session open.** The original wording was "older than
+the session close". Read literally, that would reject a normal closing print
+stamped 15:59:59 and would make almost every capture unavailable. The rule
+is therefore "before the session open (09:30 America/New_York on
+`as_of_date`)". That means "the quote is from this session", and it still
+accepts a thinly traded symbol whose last trade was earlier in the day.
 
 ### Worker `.error` checks
 
@@ -590,14 +649,24 @@ from (values ('positions'), ('accounts'), ('manual_assets'), ('liabilities'))
 - Finnhub prices arrive as JSON numbers from the provider. Moving them to
   text would need a provider-side decimal parse and is a separate change.
 
-## Decisions requested in review
+## Decisions made
 
-1. Stale-quote rule: "before the session open" (recommended) or literally
-   "before the session close".
-2. Restore after archive: not allowed in this phase (recommended) or an
-   additive restore RPC now.
-3. Recovery export `export_version` bump to 2 for the explicit column list.
-4. Whether the closed-position half of item 5 ships early with B1.
+Approved by Alex on 2026-11-24.
+
+1. **Stale-quote rule:** a quote stamped before the session open (09:30
+   America/New_York on `as_of_date`) makes capture unavailable. See item 6.
+2. **Restore after archive is allowed in this phase.** B5 adds additive
+   `restore_*` RPCs that clear the archive. pgTAP covers owner-only access,
+   the MFA policy, rejoining current totals from the restore time, and
+   unchanged past snapshots. The after-close check treats a restore after
+   the close like any other change. See items 4 and 5.
+3. **Recovery export:** `export_version` becomes 2 with the explicit column
+   list. See item 1.
+4. **The closed-position half of item 5 ships early, in B1.**
+5. **Also in B1:** the Future page shows no minus sign for a zero
+   liabilities amount.
+
+B4 waits for Alex's production query results (query b).
 
 ## Files in scope (across B1–B6)
 
