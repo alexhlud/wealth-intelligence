@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: Lint, build, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Placeholders only. The build and tests never contact Supabase,
+    # but src/lib/supabase.ts throws at import time when these are empty.
+    env:
+      VITE_SUPABASE_URL: http://127.0.0.1:54321
+      VITE_SUPABASE_PUBLISHABLE_KEY: ci-placeholder-not-a-key
+      VITE_TURNSTILE_SITE_KEY: ci-placeholder-not-a-key
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run test
+
+  rls:
+    name: RLS and database tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Local, throwaway Supabase stack inside the runner. It applies
+      # supabase/migrations from scratch. No remote project is linked.
+      - name: Start local Supabase
+        run: >-
+          npx supabase start
+          -x studio,imgproxy,mailpit,edge-runtime,logflare,vector,realtime,storage-api,postgres-meta,supavisor
+      - run: npm run test:rls
+      - name: Stop local Supabase
+        if: always()
+        run: npx supabase stop --no-backup
