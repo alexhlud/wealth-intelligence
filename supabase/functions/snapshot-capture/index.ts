@@ -1,9 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.112.4'
-import {
-  getCurrentQuoteCaptureSession,
-  getSessionsAfter,
-} from '../market-data/xnys-calendar.ts'
-import { buildSnapshot } from '../market-data/snapshot.ts'
+import { getCurrentQuoteCaptureSession } from '../market-data/xnys-calendar.ts'
+import { capturePortfolio } from './capture.ts'
+import { logFailure } from './log.ts'
 import {
   response,
   responseForCaptureSession,
@@ -102,21 +100,6 @@ function authorized(diagnostics: AuthDiagnostics) {
 
 function logRejectedAuthorization(diagnostics: AuthDiagnostics) {
   console.error('Snapshot capture authorization rejected', diagnostics)
-}
-
-function logFailure(operation: string, error: unknown) {
-  const record = error && typeof error === 'object'
-    ? error as Record<string, unknown>
-    : {}
-
-  console.error('Snapshot capture worker failure', {
-    operation,
-    errorClass: error instanceof Error ? error.name : typeof error,
-    code: typeof record.code === 'string' ? record.code : undefined,
-    message: String(record.message ?? error)
-      .replace(/\d+(?:\.\d+)?/g, '[redacted-number]')
-      .slice(0, 180),
-  })
 }
 
 function logPortfolioQuery(
@@ -348,106 +331,14 @@ export async function handler(request: Request) {
           expectedPortfolioIds.push(portfolio.id)
         }
 
-        const { data: previous } = await admin
-          .from('snapshot_capture_requests')
-          .select('as_of_date')
-          .eq('portfolio_id', portfolio.id)
-          .not('as_of_date', 'is', null)
-          .order('as_of_date', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        const { data: pending } = await admin
-          .from('snapshot_capture_requests')
-          .select('reason')
-          .eq('portfolio_id', portfolio.id)
-          .is('as_of_date', null)
-          .eq('status', 'pending')
-          .maybeSingle()
-        const reason = pending?.reason === 'position_change'
-          ? 'position_change'
-          : 'daily_close'
-
-        for (const missed of getSessionsAfter(
-          previous?.as_of_date ?? null,
-          session.asOfDate,
-        )) {
-          const { data: existing } = await admin
-            .from('portfolio_snapshots')
-            .select('id')
-            .eq('portfolio_id', portfolio.id)
-            .eq('market_close_at', missed.marketCloseAt)
-            .is('corrects_snapshot_id', null)
-            .maybeSingle()
-
-          if (!existing) {
-            const recorded = await admin.rpc('record_snapshot_capture_session', {
-              p_user_id: portfolio.user_id,
-              p_portfolio_id: portfolio.id,
-              p_as_of_date: missed.asOfDate,
-              p_reason: 'daily_close',
-              p_status: 'gap',
-              p_failure_category: 'outside_capture_window',
-            })
-
-            if (recorded.error) {
-              throw recorded.error
-            }
-          }
-        }
-
-        const built = await buildSnapshot(
+        const { status, storageFailure } = await capturePortfolio(
           admin,
-          portfolio.user_id,
-          portfolio.id,
+          portfolio,
+          session,
           finnhubApiKey,
         )
 
-        let status: 'captured' | 'gap' | 'skipped'
-
-        if (built.result.kind === 'ready' && built.payload) {
-          const saved = await admin.rpc('create_scheduled_portfolio_snapshot', {
-            p_user_id: portfolio.user_id,
-            p_portfolio_id: portfolio.id,
-            p_as_of_date: session.asOfDate,
-            p_market_close_at: session.marketCloseAt,
-            p_source: reason,
-            p_positions: built.payload.positions,
-            p_manual_assets: built.payload.manualAssets,
-            p_liabilities: built.payload.liabilities,
-            p_request_id: crypto.randomUUID(),
-          })
-
-          if (saved.error) {
-            throw saved.error
-          }
-
-          status = 'captured'
-        } else if (built.result.kind === 'already_recorded') {
-          status = 'captured'
-        } else {
-          status = built.result.reason === 'no_eligible_facts' ? 'skipped' : 'gap'
-        }
-
-        const failure = built.result.kind === 'unavailable'
-          && built.result.reason === 'price_unavailable'
-          ? 'price_unavailable'
-          : built.result.kind === 'unavailable'
-            && built.result.reason === 'state_changed_after_close'
-            ? 'state_changed_after_close'
-            : 'outside_capture_window'
-        const recorded = await admin.rpc('record_snapshot_capture_session', {
-          p_user_id: portfolio.user_id,
-          p_portfolio_id: portfolio.id,
-          p_as_of_date: session.asOfDate,
-          p_reason: reason,
-          p_status: status,
-          p_failure_category: status === 'gap' ? failure : null,
-        })
-
-        if (recorded.error) {
-          throw recorded.error
-        }
-
+        captureFailure ||= storageFailure
         processedPortfolioCount += 1
         gapPortfolioCount += status === 'gap' ? 1 : 0
       } catch (failure) {

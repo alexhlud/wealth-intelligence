@@ -178,6 +178,9 @@ describe('zero values load on every page', () => {
     renderPage(<FuturePage />)
     expect(await screen.findByText('Future, under stated assumptions.')).toBeTruthy()
     expect(screen.getByText(/Non-investment assets \$0\.00/)).toBeTruthy()
+    // A zero liability has nothing to deduct, so it carries no minus sign.
+    expect(screen.getByText(/Liabilities \$0\.00/)).toBeTruthy()
+    expect(screen.queryAllByText(/−\$0\.00/)).toEqual([])
     expectNoLoadError()
   })
 })
@@ -198,6 +201,11 @@ describe('negative net worth on Overview', () => {
     cleanup()
     rpc.mockReset()
     invoke.mockReset()
+  })
+
+  it('keeps the minus sign on a nonzero Future liability', async () => {
+    renderPage(<FuturePage />)
+    expect(await screen.findByText(/Liabilities −\$1,234\.50/)).toBeTruthy()
   })
 
   it('shows a U+2212 minus before the dollar sign', async () => {

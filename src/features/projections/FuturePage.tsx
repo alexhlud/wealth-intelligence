@@ -67,6 +67,15 @@ function formatTimestamp(value: string) {
   }).format(new Date(value))
 }
 
+/**
+ * A liability shown as a deduction: −$1,234.50. A zero amount has nothing to
+ * deduct, so it shows as $0.00 with no minus sign.
+ */
+function formatDeduction(value: string) {
+  const formatted = formatUsd(value)
+  return formatted === '$0.00' ? formatted : `−${formatted}`
+}
+
 function displayValue(point: ProjectionPoint, mode: 'nominal' | 'real') {
   return mode === 'nominal' ? point.nominal : point.real
 }
@@ -199,7 +208,7 @@ function Composition({ paths, index, title }: {
               <td>{path.name}</td>
               <td>{formatUsd(point.investments)}</td>
               <td>{formatUsd(point.assets)}</td>
-              <td>−{formatUsd(point.liabilities)}</td>
+              <td>{formatDeduction(point.liabilities)}</td>
             </tr>
           })}
         </tbody>
@@ -252,7 +261,7 @@ export function FuturePage() {
 
   return <section className="future-page"><header className="page-header"><div><h1>Future, under stated assumptions.</h1><p>{source === 'recorded' && d.snapshot ? `Projected from recorded net worth of ${formatUsd(netWorth)} on ${formatYearMonth(d.snapshot.as_of_date.slice(0, 7))}.` : `Projected from live net worth of ${formatUsd(netWorth)} as of ${formatTimestamp(latestQuoteTimestamp)}.`}</p></div></header>
     {missing.length ? <p className="quote-warning">Incomplete — {missing.map((position) => position.symbol).join(', ')} {missing.length === 1 ? 'is' : 'are'} excluded because no current price is available.</p> : null}
-    <section className="projection-controls"><div><h2>Baseline</h2><label>Source<select value={source} onChange={(event) => setSource(event.target.value as 'live' | 'recorded')}><option value="live">Live current value</option><option value="recorded" disabled={!d.snapshot}>Recorded snapshot{d.snapshot ? ` · ${formatYearMonth(d.snapshot.as_of_date.slice(0, 7))}` : ' unavailable'}</option></select></label><p>Investments {formatUsd(baseline.investments)} · Non-investment assets {formatUsd(baseline.assets)} · Liabilities −{formatUsd(baseline.liabilities)}</p></div><div><h2>Assumptions</h2><label>Investment return before inflation (%)<input value={investmentRate} onChange={(event) => setInvestmentRate(event.target.value)} inputMode="decimal" /></label><label>Inflation (%)<input value={inflationRate} onChange={(event) => setInflationRate(event.target.value)} inputMode="decimal" /></label><label>Non-investment asset growth (%)<input value={inflationRate} readOnly aria-label="Non-investment asset growth equals inflation" /></label><p>Matches inflation by default, holding real value without a directional price bet. Liabilities are held flat.</p><label>Horizon (years)<input value={years} onChange={(event) => setYears(event.target.value)} inputMode="numeric" /></label></div></section>
+    <section className="projection-controls"><div><h2>Baseline</h2><label>Source<select value={source} onChange={(event) => setSource(event.target.value as 'live' | 'recorded')}><option value="live">Live current value</option><option value="recorded" disabled={!d.snapshot}>Recorded snapshot{d.snapshot ? ` · ${formatYearMonth(d.snapshot.as_of_date.slice(0, 7))}` : ' unavailable'}</option></select></label><p>Investments {formatUsd(baseline.investments)} · Non-investment assets {formatUsd(baseline.assets)} · Liabilities {formatDeduction(baseline.liabilities)}</p></div><div><h2>Assumptions</h2><label>Investment return before inflation (%)<input value={investmentRate} onChange={(event) => setInvestmentRate(event.target.value)} inputMode="decimal" /></label><label>Inflation (%)<input value={inflationRate} onChange={(event) => setInflationRate(event.target.value)} inputMode="decimal" /></label><label>Non-investment asset growth (%)<input value={inflationRate} readOnly aria-label="Non-investment asset growth equals inflation" /></label><p>Matches inflation by default, holding real value without a directional price bet. Liabilities are held flat.</p><label>Horizon (years)<input value={years} onChange={(event) => setYears(event.target.value)} inputMode="numeric" /></label></div></section>
     <section className="projection-compare" aria-labelledby="projection-compare-title"><h2 id="projection-compare-title">Compare contribution paths</h2><div className="projection-presets">{presets.map((preset) => { const value = preset.value ?? 'custom'; const isSelected = selected.includes(value); return <div key={value} className="projection-preset"><label className="checkbox-row"><input type="checkbox" checked={isSelected} onChange={() => setSelected((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value])} />{preset.name}</label>{preset.note ? <small>{preset.note}</small> : null}{preset.value === null && isSelected ? <label className="projection-custom">Custom monthly contribution<input value={custom} onChange={(event) => setCustom(event.target.value)} inputMode="decimal" /></label> : null}</div> })}</div><p>Each path is an alternative monthly-contribution assumption; paths are not added together.</p><div className="history-periods" role="group" aria-label="Value display"><button type="button" className={mode === 'nominal' ? 'active' : ''} onClick={() => setMode('nominal')} aria-pressed={mode === 'nominal'}>Future dollars</button><button type="button" className={mode === 'real' ? 'active' : ''} onClick={() => setMode('real')} aria-pressed={mode === 'real'}>Today’s dollars</button></div>{paths.length >= 2 ? <><Chart paths={paths} mode={mode} selectedIndex={pinnedIndex} onSelect={setSelectedPointIndex} /><div className="projection-reading" aria-live="polite"><span>Pinned reading · {formatYearMonth(paths[0]!.points[pinnedIndex]!.yearMonth)}</span><div>{paths.map((path) => <p key={path.name}><strong>{path.name}</strong><b>{formatUsd(displayValue(path.points[pinnedIndex]!, mode))}</b></p>)}</div></div><Composition paths={paths} index={pinnedIndex} title="Pinned value composition" /></> : <p className="form-error">Select at least two valid contribution paths.</p>}</section>
     {paths.length ? <Composition paths={paths} index={paths[0]!.points.length - 1} title="Horizon value composition" /> : null}
     {milestones.length && paths.length ? <section className="projection-table"><h2>Next milestones</h2><div className="table-wrap"><table className="data-table"><thead><tr><th>Milestone</th>{paths.map((path) => <th key={path.name}>{path.name}</th>)}</tr></thead><tbody>{milestones.map((target) => <tr key={target}><td>{formatUsd(target)}</td>{paths.map((path) => {
