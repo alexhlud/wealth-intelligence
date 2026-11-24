@@ -533,7 +533,7 @@ and ignore `error`:
 
 | Line | Lookup | Effect of a silent error |
 | --- | --- | --- |
-| `:351-358` | `previous` capture date | `null`, so the worker treats the portfolio as never captured and walks all sessions |
+| `:351-358` | `previous` capture date | `null`, and `getSessionsAfter(null, …)` returns no sessions, so missed-session gaps are silently not recorded |
 | `:359-365` | `pending` reason | `null`, so `position_change` becomes `daily_close` |
 | `:374-379` | `existing` snapshot for a missed session | `null`, so the worker tries to write a duplicate |
 
