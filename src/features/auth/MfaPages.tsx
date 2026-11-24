@@ -37,7 +37,7 @@ export function MfaGuard() {
     void assess()
     return () => { active = false }
   }, [session])
-  if (requiresChallenge === undefined) return <main className="auth-shell"><p className="status-copy">Loading your secure workspace…</p></main>
+  if (requiresChallenge === undefined) return <main className="auth-shell"><p className="state-copy">Loading your secure workspace…</p></main>
   return requiresChallenge ? <Navigate to="/auth/mfa" replace /> : <Outlet />
 }
 
@@ -125,9 +125,9 @@ export function MfaChallengePage() {
     return () => window.removeEventListener('popstate', handleBackNavigation)
   }, [exitChallenge])
 
-  if (session === undefined) return <main className="auth-shell"><p className="status-copy">Checking your security requirements…</p></main>
+  if (session === undefined) return <main className="auth-shell"><p className="state-copy">Checking your security requirements…</p></main>
   if (!session) return <Navigate to="/auth" replace />
-  if (factors === null && !error) return <main className="auth-shell"><p className="status-copy">Preparing your authenticator challenge…</p></main>
+  if (factors === null && !error) return <main className="auth-shell"><p className="state-copy">Preparing your authenticator challenge…</p></main>
   if (error) return <main className="auth-shell"><section className="auth-panel"><h1>Security check unavailable</h1><p className="auth-intro" role="alert">{error}</p><button className="button button-secondary" onClick={() => window.location.reload()}>Try again</button></section></main>
   if (!factors?.length) return <Navigate to="/security" replace />
 
@@ -195,7 +195,7 @@ export function SecurityPage() {
     await reload()
   }
 
-  if (session === undefined) return <main className="auth-shell"><p className="status-copy">Loading security settings…</p></main>
+  if (session === undefined) return <main className="auth-shell"><p className="state-copy">Loading security settings…</p></main>
   if (!session) return <Navigate to="/auth" replace />
 
   return <section className="security-page" aria-labelledby="security-title">
