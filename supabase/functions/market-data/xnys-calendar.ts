@@ -64,7 +64,8 @@ function closeAt(date: string, closeHour: 13 | 16) {
   return new Date(Date.UTC(year!, month! - 1, day!, closeHour) - nyOffsetMilliseconds(date)).toISOString()
 }
 
-function openAt(date: string) {
+/** The 09:30 America/New_York opening instant of `date`, as a UTC ISO string. */
+export function openAt(date: string) {
   const [year, month, day] = date.split('-').map(Number)
   return new Date(Date.UTC(year!, month! - 1, day!, 9, 30) - nyOffsetMilliseconds(date)).toISOString()
 }

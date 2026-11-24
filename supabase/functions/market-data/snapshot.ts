@@ -1,6 +1,6 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.112.4'
 import { fetchFinnhubQuote } from './finnhub.ts'
-import { getCurrentQuoteCaptureSession, type XnysSession } from './xnys-calendar.ts'
+import { getCurrentQuoteCaptureSession, openAt, type XnysSession } from './xnys-calendar.ts'
 
 type Payload = { positions: Record<string, unknown>[]; manualAssets: Record<string, unknown>[]; liabilities: Record<string, unknown>[] }
 export type SnapshotResult =
@@ -17,7 +17,16 @@ export async function buildSnapshot(admin: SupabaseClient, userId: string, portf
   const [existingResult, accountsResult, positionsResult, assetsResult, liabilitiesResult] = await Promise.all([
     admin.from('portfolio_snapshots').select('id').eq('portfolio_id', portfolioId).eq('user_id', userId).eq('market_close_at', session.marketCloseAt).is('corrects_snapshot_id', null).maybeSingle(),
     admin.from('accounts').select('id, name, updated_at').eq('portfolio_id', portfolioId).eq('user_id', userId),
-    admin.from('positions').select('id, account_id, symbol, security_name, asset_type, quantity, average_cost, updated_at, last_event_at').eq('portfolio_id', portfolioId).eq('user_id', userId).eq('status', 'open'),
+    // Open positions, plus any closed after the session close: a position
+    // held at the close and sold later must not silently vanish.
+    admin.from('positions')
+      .select([
+        'id, account_id, symbol, security_name, asset_type, status',
+        'quantity, average_cost, updated_at, last_event_at, closed_at',
+      ].join(', '))
+      .eq('portfolio_id', portfolioId)
+      .eq('user_id', userId)
+      .or(`status.eq.open,closed_at.gt."${session.marketCloseAt}"`),
     admin.from('manual_assets').select('id, account_id, name, category, current_value, include_in_net_worth, currency_code, value_as_of, updated_at').eq('portfolio_id', portfolioId).eq('user_id', userId),
     admin.from('liabilities').select('id, account_id, name, category, outstanding_balance, include_in_net_worth, currency_code, balance_as_of, updated_at').eq('portfolio_id', portfolioId).eq('user_id', userId),
   ])
@@ -26,12 +35,19 @@ export async function buildSnapshot(admin: SupabaseClient, userId: string, portf
   const accounts = accountsResult.data ?? []; const positions = positionsResult.data ?? []; const assets = assetsResult.data ?? []; const liabilities = liabilitiesResult.data ?? []
   if (!positions.length && !assets.length && !liabilities.length) return { result: { kind: 'unavailable', reason: 'no_eligible_facts' } }
   const accountById = new Map(accounts.map((account) => [account.id, account]))
-  const changed = positions.some((p) => after(p.updated_at, session.marketCloseAt) || after(p.last_event_at, session.marketCloseAt) || after(accountById.get(p.account_id)?.updated_at, session.marketCloseAt))
+  const changed = positions.some((p) => after(p.closed_at, session.marketCloseAt) || after(p.updated_at, session.marketCloseAt) || after(p.last_event_at, session.marketCloseAt) || after(accountById.get(p.account_id)?.updated_at, session.marketCloseAt))
     || assets.some((a) => after(a.updated_at, session.marketCloseAt) || after(a.value_as_of, session.marketCloseAt) || (a.account_id && after(accountById.get(a.account_id)?.updated_at, session.marketCloseAt)))
     || liabilities.some((l) => after(l.updated_at, session.marketCloseAt) || after(l.balance_as_of, session.marketCloseAt) || (l.account_id && after(accountById.get(l.account_id)?.updated_at, session.marketCloseAt)))
   if (changed) return { result: { kind: 'unavailable', reason: 'state_changed_after_close' } }
   const priced = await Promise.all(positions.map(async (position) => ({ position, quote: await fetchFinnhubQuote(position.symbol, apiKey) })))
   if (priced.some(({ quote }) => quote.kind !== 'quote')) return { result: { kind: 'unavailable', reason: 'price_unavailable' } }
+  // A quote stamped before this session opened is from an earlier session
+  // (no trade, a halt or provider lag). Record a gap, not a wrong close.
+  const sessionOpen = Date.parse(openAt(session.asOfDate))
+  const stale = priced.some(({ quote }) => {
+    return quote.kind === 'quote' && Date.parse(quote.marketTimestamp) < sessionOpen
+  })
+  if (stale) return { result: { kind: 'unavailable', reason: 'price_unavailable' } }
   const snapshotPositions = priced.map(({ position, quote }) => {
     if (quote.kind !== 'quote') throw new Error('Price unavailable')
     const account = accountById.get(position.account_id)
