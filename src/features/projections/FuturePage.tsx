@@ -71,6 +71,21 @@ function displayValue(point: ProjectionPoint, mode: 'nominal' | 'real') {
   return mode === 'nominal' ? point.nominal : point.real
 }
 
+/**
+ * First annual point whose value, in the chosen dollars, reaches the target.
+ * Points are annual, so the caller shows the year only.
+ */
+function firstPointReaching(
+  points: ProjectionPoint[],
+  target: string,
+  mode: 'nominal' | 'real',
+) {
+  return points.find((point) => {
+    const whole = displayValue(point, mode).split('.')[0] ?? '0'
+    return BigInt(whole) >= BigInt(target)
+  })
+}
+
 function moneyAxis(value: number) {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
   if (value >= 1_000) return `$${Math.round(value / 1_000)}K`
@@ -240,7 +255,11 @@ export function FuturePage() {
     <section className="projection-controls"><div><h2>Baseline</h2><label>Source<select value={source} onChange={(event) => setSource(event.target.value as 'live' | 'recorded')}><option value="live">Live current value</option><option value="recorded" disabled={!d.snapshot}>Recorded snapshot{d.snapshot ? ` · ${formatYearMonth(d.snapshot.as_of_date.slice(0, 7))}` : ' unavailable'}</option></select></label><p>Investments {formatUsd(baseline.investments)} · Non-investment assets {formatUsd(baseline.assets)} · Liabilities −{formatUsd(baseline.liabilities)}</p></div><div><h2>Assumptions</h2><label>Investment return before inflation (%)<input value={investmentRate} onChange={(event) => setInvestmentRate(event.target.value)} inputMode="decimal" /></label><label>Inflation (%)<input value={inflationRate} onChange={(event) => setInflationRate(event.target.value)} inputMode="decimal" /></label><label>Non-investment asset growth (%)<input value={inflationRate} readOnly aria-label="Non-investment asset growth equals inflation" /></label><p>Matches inflation by default, holding real value without a directional price bet. Liabilities are held flat.</p><label>Horizon (years)<input value={years} onChange={(event) => setYears(event.target.value)} inputMode="numeric" /></label></div></section>
     <section className="projection-compare" aria-labelledby="projection-compare-title"><h2 id="projection-compare-title">Compare contribution paths</h2><div className="projection-presets">{presets.map((preset) => { const value = preset.value ?? 'custom'; const isSelected = selected.includes(value); return <div key={value} className="projection-preset"><label className="checkbox-row"><input type="checkbox" checked={isSelected} onChange={() => setSelected((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value])} />{preset.name}</label>{preset.note ? <small>{preset.note}</small> : null}{preset.value === null && isSelected ? <label className="projection-custom">Custom monthly contribution<input value={custom} onChange={(event) => setCustom(event.target.value)} inputMode="decimal" /></label> : null}</div> })}</div><p>Each path is an alternative monthly-contribution assumption; paths are not added together.</p><div className="history-periods" role="group" aria-label="Value display"><button type="button" className={mode === 'nominal' ? 'active' : ''} onClick={() => setMode('nominal')} aria-pressed={mode === 'nominal'}>Future dollars</button><button type="button" className={mode === 'real' ? 'active' : ''} onClick={() => setMode('real')} aria-pressed={mode === 'real'}>Today’s dollars</button></div>{paths.length >= 2 ? <><Chart paths={paths} mode={mode} selectedIndex={pinnedIndex} onSelect={setSelectedPointIndex} /><div className="projection-reading" aria-live="polite"><span>Pinned reading · {formatYearMonth(paths[0]!.points[pinnedIndex]!.yearMonth)}</span><div>{paths.map((path) => <p key={path.name}><strong>{path.name}</strong><b>{formatUsd(displayValue(path.points[pinnedIndex]!, mode))}</b></p>)}</div></div><Composition paths={paths} index={pinnedIndex} title="Pinned value composition" /></> : <p className="form-error">Select at least two valid contribution paths.</p>}</section>
     {paths.length ? <Composition paths={paths} index={paths[0]!.points.length - 1} title="Horizon value composition" /> : null}
-    {milestones.length && paths.length ? <section className="projection-table"><h2>Next milestones</h2><div className="table-wrap"><table className="data-table"><thead><tr><th>Milestone</th>{paths.map((path) => <th key={path.name}>{path.name}</th>)}</tr></thead><tbody>{milestones.map((target) => <tr key={target}><td>{formatUsd(target)}</td>{paths.map((path) => { const point = path.points.find((item) => BigInt(item.nominal.split('.')[0] ?? '0') >= BigInt(target)); return <td key={path.name}>{point ? formatYearMonth(point.yearMonth) : `Not reached within ${assumptions?.years ?? years} years`}</td> })}</tr>)}</tbody></table></div></section> : null}
+    {milestones.length && paths.length ? <section className="projection-table"><h2>Next milestones</h2><div className="table-wrap"><table className="data-table"><thead><tr><th>Milestone</th>{paths.map((path) => <th key={path.name}>{path.name}</th>)}</tr></thead><tbody>{milestones.map((target) => <tr key={target}><td>{formatUsd(target)}</td>{paths.map((path) => {
+      const point = firstPointReaching(path.points, target, mode)
+      const notReached = `Not reached within ${assumptions?.years ?? years} years`
+      return <td key={path.name}>{point ? point.yearMonth.slice(0, 4) : notReached}</td>
+    })}</tr>)}</tbody></table></div></section> : null}
     {paths.length ? <section className="projection-table"><div className="projection-table-heading"><div><h2>Annual projection</h2><p>Accessible text equivalent of the chart.</p></div><button type="button" className="button button-secondary" onClick={() => setShowEveryYear((current) => !current)}>{showEveryYear ? 'Show every five years' : 'Show every year'}</button></div><div className="table-wrap"><table className="data-table"><thead><tr><th>Point</th>{paths.map((path) => <th key={path.name}>{path.name}</th>)}</tr></thead><tbody>{annualRows.map((point) => { const index = paths[0]!.points.findIndex((candidate) => candidate.month === point.month); return <tr key={point.month}><td>Year {point.month / 12} · {formatYearMonth(point.yearMonth)}</td>{paths.map((path) => <td key={path.name}>{formatUsd(displayValue(path.points[index]!, mode))}</td>)}</tr> })}</tbody></table></div></section> : null}
   </section>
 }
