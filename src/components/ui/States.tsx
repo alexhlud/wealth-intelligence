@@ -7,4 +7,3 @@ export function EmptyState({ children }: { children: ReactNode }) { return <p cl
 export function ErrorState({ children = 'We couldn’t load this information.', onRetry }: { children?: ReactNode; onRetry?: () => void }) {
   return <div className="error-state" role="alert"><CircleAlert size={18} /><span>{children}</span>{onRetry && <Button className="button-secondary" onClick={onRetry}>Try again</Button>}</div>
 }
-export function StaleDataNotice({ children }: { children: ReactNode }) { return <p className="stale-notice" role="status">{children}</p> }

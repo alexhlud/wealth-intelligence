@@ -444,6 +444,23 @@ Store:
 
 and format in the UI.
 
+## Display rounding
+
+`formatUsd` in `src/features/portfolio/prices.ts` is the one USD display
+formatter. It works on decimal text with integer arithmetic and never
+converts the value to a JavaScript number.
+
+- It rounds to whole cents, half away from zero. This is the same rule as
+  Postgres `round(numeric, 2)`, so a value rounded in SQL and the same value
+  rounded in the browser show the same cents.
+  - `0.005` shows as `$0.01`, `1.994` as `$1.99`, `2.995` as `$3.00`.
+  - `-0.005` shows as `−$0.01`.
+- A negative value shows the minus sign (U+2212, `−`) before the dollar
+  sign: `−$1,234.50`, never `$-1,234.50`.
+- A value that rounds to zero cents shows as `$0.00`, never `−$0.00`.
+- Rounding happens only at display. Sums and differences use the full
+  stored scale first, then the total is rounded once.
+
 ---
 
 # CURRENCY

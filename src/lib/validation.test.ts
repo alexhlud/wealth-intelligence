@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { accountInputSchema, accountResponseSchema, invitationPasswordInputSchema, liabilityInputSchema, manualAssetInputSchema, openPositionResponseSchema, parsePositionResponse, passwordResetInputSchema, positionInputSchema, positionIntentSchema, signInInputSchema, validationErrorMessage } from './validation'
+import { liabilityResponseSchema, manualAssetResponseSchema } from './validation'
 
 describe('positionInputSchema', () => {
   it('normalizes a valid fractional-share position without coercing money', () => {
@@ -30,7 +31,8 @@ describe('positionInputSchema', () => {
     { quantity: 0, average_cost: 400 },
     { quantity: Number.POSITIVE_INFINITY, average_cost: 400 },
     { quantity: Number.MAX_SAFE_INTEGER + 1, average_cost: 400 },
-    { quantity: '20.123456789', average_cost: 400 },
+    // positions.quantity is numeric(28,12), so 13 places exceeds its scale.
+    { quantity: '20.1234567890123', average_cost: 400 },
   ])('rejects malformed PostgREST numeric values %#', ({ quantity, average_cost }) => {
     expect(() => parsePositionResponse([
       { id: '11111111-1111-4111-8111-111111111111', symbol: 'QQQ', quantity, average_cost },
@@ -88,5 +90,94 @@ describe('MFA-3 Auth validation', () => {
     const tooLong = signInInputSchema.safeParse({ email: 'user@example.com', password: 'a'.repeat(129) })
     expect(tooLong.success).toBe(false)
     if (!tooLong.success) expect(validationErrorMessage('signIn', tooLong.error)).toBe('Use 128 characters or fewer.')
+  })
+})
+
+describe('Trust batch A read checks', () => {
+  const ids = {
+    id: '33333333-3333-4333-8333-333333333333',
+    accountId: '11111111-1111-4111-8111-111111111111',
+    portfolioId: '22222222-2222-4222-8222-222222222222',
+  }
+
+  function openPosition(quantity: unknown, averageCost: unknown) {
+    return {
+      id: ids.id,
+      account_id: ids.accountId,
+      symbol: 'QQQ',
+      security_name: 'Invesco QQQ',
+      asset_type: 'etf',
+      status: 'open',
+      quantity,
+      average_cost: averageCost,
+    }
+  }
+
+  function item(extra: Record<string, unknown>) {
+    return {
+      id: ids.id,
+      portfolio_id: ids.portfolioId,
+      account_id: null,
+      name: 'Item',
+      currency_code: 'USD',
+      include_in_net_worth: true,
+      notes: null,
+      ...extra,
+    }
+  }
+
+  it('loads a zero cost basis as text or as a PostgREST number', () => {
+    const rows = openPositionResponseSchema.parse([
+      openPosition('1', '0'),
+      openPosition(1, 0),
+      openPosition('1', '0.00000000'),
+    ])
+    expect(rows.map((row) => row.average_cost)).toEqual(['0', '0', '0.00000000'])
+  })
+
+  it('loads a zero asset value and a zero liability balance', () => {
+    const asOf = '2026-11-20T12:00:00.000Z'
+    const asset = manualAssetResponseSchema.parse([
+      item({ category: 'cash', current_value: 0, value_as_of: asOf }),
+    ])
+    const liability = liabilityResponseSchema.parse([
+      item({ category: 'mortgage', outstanding_balance: '0', balance_as_of: asOf }),
+    ])
+    expect(asset[0]?.current_value).toBe('0')
+    expect(liability[0]?.outstanding_balance).toBe('0')
+  })
+
+  it('keeps open position quantity strictly positive', () => {
+    expect(() => openPositionResponseSchema.parse([openPosition(0, 1)])).toThrow()
+    expect(() => openPositionResponseSchema.parse([openPosition('0', '1')])).toThrow()
+    expect(() => openPositionResponseSchema.parse([openPosition('0.000000000000', '1')])).toThrow()
+  })
+
+  it('rejects negative values in every read column', () => {
+    expect(() => openPositionResponseSchema.parse([openPosition('-1', '1')])).toThrow()
+    expect(() => openPositionResponseSchema.parse([openPosition('1', -1)])).toThrow()
+    expect(() => manualAssetResponseSchema.parse([
+      item({ category: 'cash', current_value: '-1', value_as_of: '2026-11-20T12:00:00.000Z' }),
+    ])).toThrow()
+  })
+
+  it('reads quantity at its numeric(28,12) scale exactly', () => {
+    const fromText = openPositionResponseSchema.parse([openPosition('0.000000123456', '1')])
+    const fromNumber = openPositionResponseSchema.parse([openPosition(0.000000123456, '1')])
+    expect(fromText[0]?.quantity).toBe('0.000000123456')
+    expect(fromNumber[0]?.quantity).toBe('0.000000123456')
+    expect(parsePositionResponse([
+      { id: ids.id, symbol: 'QQQ', quantity: 5e-7, average_cost: 1 },
+    ])[0]?.quantity).toBe('0.0000005')
+  })
+
+  it('rejects more decimal places than each column stores', () => {
+    expect(() => openPositionResponseSchema.parse([openPosition('0.0000000000001', '1')])).toThrow()
+    expect(() => openPositionResponseSchema.parse([openPosition('1', '0.000000001')])).toThrow()
+    expect(() => openPositionResponseSchema.parse([openPosition('1', 1e-9)])).toThrow()
+  })
+
+  it('rejects exponent text, which Postgres numeric text never emits', () => {
+    expect(() => openPositionResponseSchema.parse([openPosition('5e-7', '1')])).toThrow()
   })
 })

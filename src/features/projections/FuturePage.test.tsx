@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FuturePage } from './FuturePage'
 
@@ -82,5 +82,48 @@ describe('FuturePage', () => {
     expect(invoke).toHaveBeenCalledWith('market-data', {
       body: { operation: 'quotes', symbols: ['QQQ'] },
     })
+  })
+})
+
+describe('FuturePage milestones', () => {
+  afterEach(() => {
+    cleanup()
+    invoke.mockReset()
+    rpc.mockReset()
+    vi.useRealTimers()
+  })
+
+  function milestoneCells(target: string) {
+    const table = screen.getByRole('heading', { name: 'Next milestones' }).parentElement!
+    const row = within(table).getAllByRole('row')
+      .find((candidate) => candidate.firstElementChild?.textContent === target)!
+    return within(row).getAllByRole('cell').map((cell) => cell.textContent)
+  }
+
+  it('uses the value mode and shows the year only', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-15T12:00:00.000Z'))
+    rpc.mockImplementation((name: string) => Promise.resolve(name === 'ensure_primary_portfolio'
+      ? { data: { id: portfolioId, name: 'Primary portfolio' }, error: null }
+      : { data: [], error: null }))
+    invoke.mockImplementation(
+      (_name: string, { body }: { body: { symbols: string[] } }) =>
+        Promise.resolve({ data: { quotes: body.symbols.map(quote) }, error: null }),
+    )
+
+    renderFuture()
+    await screen.findByRole('heading', { name: 'Next milestones' })
+
+    // Baseline $2,500 at 7% return and 2.5% inflation over 30 years.
+    expect(milestoneCells('$10,000.00')).toEqual(['$10,000.00', '2047', '2028', '2027'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today’s dollars' }))
+
+    expect(milestoneCells('$10,000.00')).toEqual([
+      '$10,000.00',
+      'Not reached within 30 years',
+      '2028',
+      '2027',
+    ])
   })
 })

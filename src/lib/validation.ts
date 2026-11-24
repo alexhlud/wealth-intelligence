@@ -11,15 +11,76 @@ const nonnegativeDecimal = z
   .trim()
   .regex(/^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/, 'Enter a decimal number.')
 
-const postgrestDecimal = z
-  .union([
-    positiveDecimal,
-    z.number()
-      .finite('Expected a finite decimal number.')
-      .refine((value) => Math.abs(value) <= Number.MAX_SAFE_INTEGER, 'Expected a safe decimal number.')
-      .transform((value) => value.toString()),
-  ])
-  .pipe(positiveDecimal)
+/**
+ * Expands JavaScript's shortest round-trip number text into plain decimal
+ * text. Number#toString uses exponent form below 1e-6 (0.0000005 -> "5e-7").
+ * The digits are moved as text, so no further floating-point step occurs.
+ */
+function numberToPlainDecimal(value: number): string {
+  const text = value.toString()
+  const match = /^(-?)(\d)(?:\.(\d+))?e([+-]\d+)$/.exec(text)
+  if (!match) return text
+  const [, sign, lead, rest = '', exponentText] = match
+  const digits = `${lead}${rest}`
+  const pointIndex = 1 + Number(exponentText)
+  if (pointIndex <= 0) {
+    return `${sign}0.${'0'.repeat(-pointIndex)}${digits}`
+  }
+  if (pointIndex >= digits.length) {
+    return `${sign}${digits}${'0'.repeat(pointIndex - digits.length)}`
+  }
+  return `${sign}${digits.slice(0, pointIndex)}.${digits.slice(pointIndex)}`
+}
+
+type ReadDecimalRule = {
+  /** Fraction digits the Postgres column stores, e.g. 12 for numeric(28,12). */
+  scale: number
+  /** Integer digits the column stores: precision minus scale. */
+  integerDigits: number
+  /** True when the read must be greater than zero, not just zero or more. */
+  positive: boolean
+}
+
+/**
+ * Read check for a nonnegative NUMERIC column delivered by PostgREST as text
+ * or as a JSON number. It enforces the column's own scale and sign rule.
+ */
+function postgrestDecimal(rule: ReadDecimalRule) {
+  const pattern = new RegExp(
+    `^(?:0|[1-9]\\d{0,${rule.integerDigits - 1}})(?:\\.\\d{1,${rule.scale}})?$`,
+  )
+  const canonical = z
+    .string()
+    .trim()
+    .regex(pattern, 'Expected a decimal within the column scale.')
+    .refine(
+      (value) => !rule.positive || /[1-9]/.test(value),
+      'Expected a value greater than zero.',
+    )
+  const fromNumber = z
+    .number()
+    .finite('Expected a finite decimal number.')
+    .refine(
+      (value) => Math.abs(value) <= Number.MAX_SAFE_INTEGER,
+      'Expected a safe decimal number.',
+    )
+    .transform(numberToPlainDecimal)
+  return z.union([z.string(), fromNumber]).pipe(canonical)
+}
+
+/** positions.quantity is numeric(28,12); an open position is above zero. */
+const openQuantityRead = postgrestDecimal({
+  scale: 12,
+  integerDigits: 16,
+  positive: true,
+})
+
+/** average_cost, current_value and outstanding_balance are numeric(24,8) >= 0. */
+const moneyRead = postgrestDecimal({
+  scale: 8,
+  integerDigits: 16,
+  positive: false,
+})
 
 const nullableText = (max: number) => z.string().trim().min(1).max(max).nullable()
 
@@ -38,8 +99,8 @@ export type PositionInput = z.infer<typeof positionInputSchema>
 const positionResponseRowSchema = z.object({
   id: z.string().uuid(),
   symbol: z.string().regex(/^[A-Z][A-Z0-9.-]{0,9}$/),
-  quantity: postgrestDecimal,
-  average_cost: postgrestDecimal,
+  quantity: openQuantityRead,
+  average_cost: moneyRead,
 })
 
 export const positionResponseSchema = z.array(positionResponseRowSchema)
@@ -66,7 +127,9 @@ export type AccountResponse = z.infer<typeof accountResponseRowSchema>
 const openPositionResponseRowSchema = z.object({
   id: z.string().uuid(), account_id: z.string().uuid(), symbol: z.string().regex(/^[A-Z][A-Z0-9.-]{0,9}$/),
   security_name: z.string().trim().min(1).max(120), asset_type: z.enum(['stock', 'etf', 'mutual_fund', 'bond', 'crypto', 'cash_equivalent', 'other']),
-  status: z.literal('open'), quantity: postgrestDecimal, average_cost: postgrestDecimal,
+  status: z.literal('open'),
+  quantity: openQuantityRead,
+  average_cost: moneyRead,
   last_event_at: z.string().datetime({ offset: true }).optional(),
 })
 export const openPositionResponseSchema = z.array(openPositionResponseRowSchema)
@@ -99,10 +162,24 @@ export type LiabilityInput = z.infer<typeof liabilityInputSchema>
 
 const itemResponseBaseSchema = z.object({
   id: z.string().uuid(), portfolio_id: z.string().uuid(), account_id: z.string().uuid().nullable(), name: z.string().trim().min(1).max(120),
-  current_value: postgrestDecimal.optional(), outstanding_balance: postgrestDecimal.optional(), currency_code: z.literal('USD'), include_in_net_worth: z.boolean(), notes: nullableText(500), value_as_of: z.string().datetime({ offset: true }).optional(), balance_as_of: z.string().datetime({ offset: true }).optional(),
+  current_value: moneyRead.optional(),
+  outstanding_balance: moneyRead.optional(),
+  currency_code: z.literal('USD'), include_in_net_worth: z.boolean(), notes: nullableText(500), value_as_of: z.string().datetime({ offset: true }).optional(), balance_as_of: z.string().datetime({ offset: true }).optional(),
 })
-export const manualAssetResponseSchema = z.array(itemResponseBaseSchema.extend({ category: z.enum(['cash', 'savings', 'real_estate', 'vehicle', 'business_equity', 'collectible', 'other']), current_value: postgrestDecimal, value_as_of: z.string().datetime({ offset: true }) }))
-export const liabilityResponseSchema = z.array(itemResponseBaseSchema.extend({ category: z.enum(['mortgage', 'vehicle_loan', 'student_loan', 'credit_balance', 'personal_loan', 'other']), outstanding_balance: postgrestDecimal, balance_as_of: z.string().datetime({ offset: true }) }))
+export const manualAssetResponseSchema = z.array(itemResponseBaseSchema.extend({
+  category: z.enum([
+    'cash', 'savings', 'real_estate', 'vehicle', 'business_equity', 'collectible', 'other',
+  ]),
+  current_value: moneyRead,
+  value_as_of: z.string().datetime({ offset: true }),
+}))
+export const liabilityResponseSchema = z.array(itemResponseBaseSchema.extend({
+  category: z.enum([
+    'mortgage', 'vehicle_loan', 'student_loan', 'credit_balance', 'personal_loan', 'other',
+  ]),
+  outstanding_balance: moneyRead,
+  balance_as_of: z.string().datetime({ offset: true }),
+}))
 export type ManualAssetResponse = z.infer<typeof manualAssetResponseSchema>[number]
 export type LiabilityResponse = z.infer<typeof liabilityResponseSchema>[number]
 
